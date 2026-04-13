@@ -4,13 +4,16 @@
 
   <name>libsurvive_ros2</name>
 
-  <version>0.0.1</version>
+  <version>0.0.2</version>
 
   <description>libsurvive driver for ROS2</description>
 
   <maintainer email="andrew.c.symington@gmail.com">Andrew Symington</maintainer>
 
   <license>MIT</license>
+
+  <author email="andrew.c.symington@gmail.com">Andrew Symington</author>
+  <author email="shkwon@tommoro.ai">Sunghyun Kwon</author>
 
   <depend>rclcpp</depend>
   <depend>rclcpp_components</depend>

@@ -120,13 +120,16 @@ Alternatively, to run the driver on native installations run the following:
 $ ros2 launch libsurvive_ros2 libsurvive_ros2.launch.py rosbridge:=true
 ```
 
-There are three launch arguments to `libsurvive_ros2.launch.py` to help get up and running:
+There are launch arguments to `libsurvive_ros2.launch.py` to help get up and running:
 
 - `namespace = string (default: 'libsurvive')` : This is the namespace on which to add the extra topics for sensor data.
 - `record = boolean (default: false)` : Start a `ros2 bag record` to save `/tf` and `/tf_static` topics to a ros bag in the ROS2 log directory for the current launch ID as `libsurvive.bag`.
 - `foxbridge = boolean (default: false)` : Starts a `foxglove_bridge` to push data over a websocket at point 8765 (high performance).
 - `rosbridge = boolean (default: false)` : Starts a `rosbridge_server` and `rosapi` node to push data over a websocket at 9090 (more flexible).
 - `composable = boolean (default: false)`: For advanced users only -- it shows how to load the component-based version of the code to get zero-copy IPC between it and other composable nodes. 
+- `tracking_frame = string (default: 'libsurvive_world')`: Parent frame used for tracked device and lighthouse poses.
+- `config_path = string (default: package `config/config.json`)`: Path to a libsurvive calibration config file.
+- `force_recalibrate = boolean (default: false)`: Request a fresh libsurvive calibration run.
 
 # Example visualization with Foxglove
 
@@ -144,6 +147,8 @@ Now move the tracker around and you should see its corresponding transform move 
 - **How do I configure this for my specific tracker ID?** There's no need -- the libsurvive driver will enumerate all devices, query their ID and publish this ID as the transform name using the TF2 standard topic `/tf`. Base station positions change less frequently, and so they are published at a lowe rate on `/tf_static`.
 
 - **The base stations locations are not where I'd expect them to be** -- The calibration phase of libsurvive works out the relative location of the base stations. It has no idea of their orientation with respect to the room. To fix this, you will need to write your own static transform broadcaster to provide the relationship between your world frame and the `libsurvive_world` frame.
+
+- **When should I override `config_path`?** Pass `config_path:=/path/to/config.json` when you want to use a calibration file that matches your active lighthouse installation and room setup.
 
 - **In need to send extra arguments to the driver** -- Have a look at the `libsurvive_ros2.launch.py` file, and particularly at the `parameters` variable. You should probably be writing your own launch file, and you can include custom modifications for your specific tracking setup by changing the parameters you pass to the driver.
 

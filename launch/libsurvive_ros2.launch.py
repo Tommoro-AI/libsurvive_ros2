@@ -26,7 +26,7 @@ import launch
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, ExecuteProcess
 from launch.conditions import IfCondition, UnlessCondition
-from launch.substitutions import LaunchConfiguration
+from launch.substitutions import LaunchConfiguration, PythonExpression
 from launch_ros.actions import ComposableNodeContainer, Node
 from launch_ros.descriptions import ComposableNode
 
@@ -38,15 +38,6 @@ CFG_FILE = os.path.join(
     get_package_share_directory('libsurvive_ros2'), 'config', 'config.json'
 )
 
-# Sow we don't have to repeat for composable and non-composable versions.
-PARAMETERS = [
-    {'driver_args': f'--force-recalibrate 1 -c {CFG_FILE}'},
-    {'tracking_frame': 'libsurvive_world'},
-    {'imu_topic': 'imu'},
-    {'joy_topic': 'joy'},
-    {'cfg_topic': 'cfg'},
-    {'lighthouse_rate': 4.0}]
-
 
 def generate_launch_description():
     arguments = [
@@ -54,12 +45,43 @@ def generate_launch_description():
                               description='Namespace for the non-TF topics'),
         DeclareLaunchArgument('composable', default_value='false',
                               description='Launch in a composable container'),
+        DeclareLaunchArgument('tracking_frame', default_value='libsurvive_world',
+                              description='Frame used as the parent frame for tracked poses'),
+        DeclareLaunchArgument('force_recalibrate', default_value='false',
+                              description='Whether to force a fresh libsurvive calibration'),
+        DeclareLaunchArgument(
+            'config_path',
+            default_value=CFG_FILE,
+            description=('Path to a libsurvive calibration config file. '
+                         f'Default: {CFG_FILE}')),
         DeclareLaunchArgument('rosbridge', default_value='false',
                               description='Launch a rosbridge'),
         DeclareLaunchArgument('foxbridge', default_value='false',
                               description='Launch a foxglove bridge'),
         DeclareLaunchArgument('record', default_value='false',
                               description='Record data with rosbag')]
+
+    # So we don't have to repeat for composable and non-composable versions.
+    parameters = [
+        {
+            'driver_args': PythonExpression([
+                '"--force-recalibrate 1 " if "',
+                LaunchConfiguration('force_recalibrate'),
+                '" == "true" else ""',
+                ' + ',
+                '"-c ',
+                LaunchConfiguration('config_path'),
+                '" if "',
+                LaunchConfiguration('config_path'),
+                '" != "" else ""'
+            ])
+        },
+        {'tracking_frame': LaunchConfiguration('tracking_frame')},
+        {'imu_topic': 'imu'},
+        {'joy_topic': 'joy'},
+        {'cfg_topic': 'cfg'},
+        {'lighthouse_rate': 4.0}
+    ]
 
     # Non-composable launch (regular node)
     libsurvive_node = Node(
@@ -69,7 +91,7 @@ def generate_launch_description():
         namespace=LaunchConfiguration('namespace'),
         condition=UnlessCondition(LaunchConfiguration('composable')),
         output='screen',
-        parameters=PARAMETERS)
+        parameters=parameters)
 
     # Composable launch (zero-copy node example)
     libsurvive_composable_node = ComposableNodeContainer(
@@ -83,7 +105,7 @@ def generate_launch_description():
                 package='libsurvive_ros2',
                 plugin='libsurvive_ros2::Component',
                 name='libsurvive_ros2_component',
-                parameters=PARAMETERS,
+                parameters=parameters,
                 extra_arguments=[
                     {'use_intra_process_comms': True}
                 ]
