@@ -9,7 +9,7 @@ This hardware is particularly useful to robotics projects, because it provides a
 
 The driver in this repo is largely based on the ROS1 driver [here](https://github.com/cntools/libsurvive/tree/master/tools/ros_publisher). It has been migrated to ROS2, and refactored slightly -- we use a thread to manage the blocking interaction with libsurvive, so that it doesn't lock the ROS2 callback queue and prevent messages from propagating correctly.
 
-This package expects `libsurvive` source to exist locally (for example as a git submodule) at `third_party/libsurvive`, then builds and links it as part of the workspace build. This makes local patches to `libsurvive` easy to manage and version together with this package.
+When you build this package, `cmake` pulls and builds a pinned `libsurvive` revision via `FetchContent`, then links against that target.
 
 Progress:
 
@@ -97,9 +97,6 @@ Finally source ROS2, create a workspace, checkout, compile and test:
 $ mkdir ~/ros2_ws/src
 $ cd  ~/ros2_ws/src
 $ git clone https://github.com/asymingt/libsurvive_ros2.git
-$ cd libsurvive_ros2
-$ git submodule update --init --recursive
-$ cd ..
 $ cd ..
 $ rosdep update
 $ rosdep install --from-paths src --ignore-src -r -y

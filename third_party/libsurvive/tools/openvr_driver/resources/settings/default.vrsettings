@@ -1,6 +1,0 @@
-{
-    "driver_survive": {
-        "enable": true,
-        "loadPriority": 10
-    }
-}

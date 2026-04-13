@@ -1,2 +1,0 @@
-leak:get_num_procs
-

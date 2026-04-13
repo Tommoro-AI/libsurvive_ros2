@@ -37,21 +37,13 @@ endif()
 # Set compile options
 add_compile_options(-Wall -Wextra -Wpedantic)
 
-# Build libsurvive from a local vendored source (submodule-friendly).
-set(LIBSURVIVE_SOURCE_DIR
-    "${CMAKE_CURRENT_SOURCE_DIR}/third_party/libsurvive"
-    CACHE PATH "Path to local libsurvive source tree")
-
-if(NOT EXISTS "${LIBSURVIVE_SOURCE_DIR}/CMakeLists.txt")
-  message(
-    FATAL_ERROR
-      "libsurvive source not found at ${LIBSURVIVE_SOURCE_DIR}. "
-      "Use a git submodule or vendor the source there. "
-      "For submodules, run: git submodule update --init --recursive")
-endif()
-
-add_subdirectory(${LIBSURVIVE_SOURCE_DIR}
-                 ${CMAKE_CURRENT_BINARY_DIR}/libsurvive-build EXCLUDE_FROM_ALL)
+# Fetch and build libsurvive during configure.
+include(FetchContent)
+FetchContent_Declare(
+  libsurvive_src
+  GIT_REPOSITORY https://github.com/cntools/libsurvive.git
+  GIT_TAG 32cf62c52744fdc32003ef8169e8b81f6f31526b)
+FetchContent_MakeAvailable(libsurvive_src)
 
 if(TARGET survive)
   set(LIBSURVIVE_TARGET survive)
@@ -60,7 +52,8 @@ elseif(TARGET libsurvive)
 else()
   message(
     FATAL_ERROR
-      "Could not find a libsurvive CMake target after add_subdirectory().")
+      "Could not find a libsurvive CMake target after FetchContent_MakeAvailable()."
+  )
 endif()
 
 # Find dependencies
@@ -80,10 +73,10 @@ include_directories(include)
 add_library(libsurvive_ros2_component SHARED src/component.cpp)
 target_include_directories(
   libsurvive_ros2_component
-  PUBLIC ${LIBSURVIVE_SOURCE_DIR}/include
-         ${LIBSURVIVE_SOURCE_DIR}/include/libsurvive
-         ${LIBSURVIVE_SOURCE_DIR}/include/libsurvive/redist
-         ${LIBSURVIVE_SOURCE_DIR}/redist)
+  PUBLIC ${libsurvive_src_SOURCE_DIR}/include
+         ${libsurvive_src_SOURCE_DIR}/include/libsurvive
+         # ${libsurvive_src_SOURCE_DIR}/include/libsurvive/redist
+         ${libsurvive_src_SOURCE_DIR}/redist)
 target_link_libraries(libsurvive_ros2_component ${LIBSURVIVE_TARGET})
 target_compile_definitions(libsurvive_ros2_component
                            PRIVATE "COMPOSITION_BUILDING_DLL")
