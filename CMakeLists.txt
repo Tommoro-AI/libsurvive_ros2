@@ -75,7 +75,6 @@ target_include_directories(
   libsurvive_ros2_component
   PUBLIC ${libsurvive_src_SOURCE_DIR}/include
          ${libsurvive_src_SOURCE_DIR}/include/libsurvive
-         # ${libsurvive_src_SOURCE_DIR}/include/libsurvive/redist
          ${libsurvive_src_SOURCE_DIR}/redist)
 target_link_libraries(libsurvive_ros2_component ${LIBSURVIVE_TARGET})
 target_compile_definitions(libsurvive_ros2_component
