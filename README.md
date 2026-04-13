@@ -130,12 +130,21 @@ There are launch arguments to `libsurvive_ros2.launch.py` to help get up and run
 - `enable_world_alignment = boolean (default: true)`: Run helper node that publishes static transform between `world` and `tracking_frame` from joy button press.
 - `world_frame = string (default: 'world')`: World frame name used by the alignment helper node.
 - `world_align_button_index = int (default: 3)`: Joy button index used as alignment trigger.
+- `occlusion_topic = string (default: 'occlusion')`: Occlusion status topic (`libsurvive_ros2/msg/OcclusionStatus`).
 
 World alignment helper behavior (when `enable_world_alignment:=true`):
 
 - `world` z-axis is kept aligned with `libsurvive_world` z-axis (no roll/pitch correction).
 - Heading is derived from tracker orientation by projecting a tracker-derived direction onto the plane normal to z, then converting that heading to a quaternion (`setRPY(0, 0, yaw)`).
 - This keeps gravity alignment stable while still allowing operator-driven x/y orientation alignment.
+
+Occlusion monitor behavior:
+
+- `/<namespace>/<occlusion_topic>` publishes `libsurvive_ros2/msg/OcclusionStatus`.
+- `header.frame_id` contains the device serial (same style as `/imu`), and `occluded` is the per-device occlusion flag.
+- `occluded=true` means the corresponding tracked non-lighthouse device is considered occluded.
+- The driver estimates occlusion from libsurvive internal timing by tracking age of each object's latest optical update (`last_light`) against current libsurvive runtime.
+- Occlusion thresholds and debounce counts are intentionally fixed in code for stable behavior.
 
 # Common questions
 

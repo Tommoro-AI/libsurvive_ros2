@@ -60,6 +60,8 @@ def generate_launch_description():
                               description='World frame name for static alignment transform'),
         DeclareLaunchArgument('world_align_button_index', default_value='3',
                               description='Joy button index used as alignment trigger'),
+        DeclareLaunchArgument('occlusion_topic', default_value='occlusion',
+                      description='Topic name for per-device occlusion status messages'),
         DeclareLaunchArgument('record', default_value='false',
                               description='Record data with rosbag')]
 
@@ -82,6 +84,7 @@ def generate_launch_description():
         {'imu_topic': 'imu'},
         {'joy_topic': 'joy'},
         {'cfg_topic': 'cfg'},
+        {'occlusion_topic': LaunchConfiguration('occlusion_topic')},
         {'lighthouse_rate': 4.0}
     ]
 

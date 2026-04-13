@@ -32,14 +32,16 @@
 #include <mutex>
 #include <string>
 #include <thread>
+#include <unordered_map>
 #include <vector>
 
 // Other
 #include "diagnostic_msgs/msg/key_value.hpp"
 #include "geometry_msgs/msg/point_stamped.hpp"
 #include "geometry_msgs/msg/pose_stamped.hpp"
-#include "libsurvive/survive_api.h"
 #include "libsurvive/survive.h"
+#include "libsurvive/survive_api.h"
+#include "libsurvive_ros2/msg/occlusion_status.hpp"
 #include "rclcpp/rclcpp.hpp"
 #include "sensor_msgs/msg/imu.hpp"
 #include "sensor_msgs/msg/joy.hpp"
@@ -52,25 +54,32 @@ namespace libsurvive_ros2
 class Component : public rclcpp::Node
 {
 public:
-  explicit Component(const rclcpp::NodeOptions & options);
-  virtual ~Component();
-  rclcpp::Time get_ros_time(const std::string & str, FLT timecode);
-  void publish_imu(const sensor_msgs::msg::Imu & msg);
+    explicit Component(const rclcpp::NodeOptions &options);
+    virtual ~Component();
+    rclcpp::Time get_ros_time(const std::string &str, FLT timecode);
+    void publish_imu(const sensor_msgs::msg::Imu &msg);
+    void update_occlusion_state(const SurviveSimpleObject *object, FLT pose_timecode);
+    void publish_device_occlusion(const std::string &serial, bool occluded, FLT timecode);
 
 private:
-  void work();
-  SurviveSimpleContext * actx_;
-  std::unique_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster_;
-  std::shared_ptr<tf2_ros::StaticTransformBroadcaster> tf_static_broadcaster_;
-  rclcpp::Publisher<sensor_msgs::msg::Joy>::SharedPtr joy_publisher_;
-  rclcpp::Publisher<sensor_msgs::msg::Imu>::SharedPtr imu_publisher_;
-  rclcpp::Publisher<diagnostic_msgs::msg::KeyValue>::SharedPtr cfg_publisher_;
-  std::thread worker_thread_;
-  rclcpp::Time last_base_station_update_;
-  std::string tracking_frame_;
-  double lighthouse_rate_;
+    void work();
+    SurviveSimpleContext *actx_;
+    std::unique_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster_;
+    std::shared_ptr<tf2_ros::StaticTransformBroadcaster> tf_static_broadcaster_;
+    rclcpp::Publisher<sensor_msgs::msg::Joy>::SharedPtr joy_publisher_;
+    rclcpp::Publisher<sensor_msgs::msg::Imu>::SharedPtr imu_publisher_;
+    rclcpp::Publisher<libsurvive_ros2::msg::OcclusionStatus>::SharedPtr occlusion_publisher_;
+    rclcpp::Publisher<diagnostic_msgs::msg::KeyValue>::SharedPtr cfg_publisher_;
+    std::thread worker_thread_;
+    rclcpp::Time last_base_station_update_;
+    std::string tracking_frame_;
+    std::string occlusion_topic_base_;
+    std::unordered_map<std::string, bool> occlusion_by_device_;
+    std::unordered_map<std::string, int> occlusion_enter_count_by_device_;
+    std::unordered_map<std::string, int> occlusion_exit_count_by_device_;
+    double lighthouse_rate_;
 };
 
-}  // namespace libsurvive_ros2
+} // namespace libsurvive_ros2
 
-#endif  // LIBSURVIVE_ROS2__COMPONENT_HPP_
+#endif // LIBSURVIVE_ROS2__COMPONENT_HPP_
