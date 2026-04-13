@@ -127,6 +127,8 @@ There are launch arguments to `libsurvive_ros2.launch.py` to help get up and run
 - `tracking_frame = string (default: 'libsurvive_world')`: Parent frame used for tracked device and lighthouse poses.
 - `config_path = string (default: package `config/config.json`)`: Path to a libsurvive calibration config file.
 - `force_recalibrate = boolean (default: false)`: Request a fresh libsurvive calibration run.
+- `velocity_topic = string (default: 'velocity')`: Topic for per-device velocity (`geometry_msgs/TwistStamped`).
+- `battery_topic = string (default: 'battery')`: Topic for per-device battery state (`sensor_msgs/BatteryState`).
 - `enable_world_alignment = boolean (default: true)`: Run helper node that publishes static transform between `world` and `tracking_frame` from joy button press.
 - `world_frame = string (default: 'world')`: World frame name used by the alignment helper node.
 - `world_align_button_index = int (default: 3)`: Joy button index used as alignment trigger.
@@ -145,6 +147,13 @@ Occlusion monitor behavior:
 - `occluded=true` means the corresponding tracked non-lighthouse device is considered occluded.
 - The driver estimates occlusion from libsurvive internal timing by tracking age of each object's latest optical update (`last_light`) against current libsurvive runtime.
 - Occlusion thresholds and debounce counts are intentionally fixed in code for stable behavior.
+
+Velocity and battery behavior:
+
+- `/<namespace>/<velocity_topic>` publishes `geometry_msgs/TwistStamped`.
+- `header.frame_id` is the device serial; `twist.linear` and `twist.angular` are expressed in the device local frame.
+- `/<namespace>/<battery_topic>` publishes `sensor_msgs/BatteryState`.
+- `header.frame_id` is the device serial; `percentage` and charging/discharging status are populated from libsurvive object state.
 
 # Common questions
 

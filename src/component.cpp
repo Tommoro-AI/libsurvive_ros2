@@ -20,9 +20,13 @@
 
 // C++ system
 #include <algorithm>
+#include <limits>
 #include <memory>
 #include <string>
 #include <vector>
+
+#include <tf2/LinearMath/Quaternion.h>
+#include <tf2/LinearMath/Vector3.h>
 
 // Other
 #include "libsurvive_ros2/component.hpp"
@@ -72,6 +76,13 @@ static void ros_from_pose(
   tx->rotation.z = pose.Rot[3];
 }
 
+static tf2::Quaternion body_from_world_quaternion(const SurvivePose & pose)
+{
+  tf2::Quaternion q_world_from_body(pose.Rot[1], pose.Rot[2], pose.Rot[3], pose.Rot[0]);
+  q_world_from_body.normalize();
+  return q_world_from_body.inverse();
+}
+
 static bool compute_raw_occluded(
   SurviveObject * so, bool previous_state)
 {
@@ -115,6 +126,18 @@ Component::Component(const rclcpp::NodeOptions & options)
   this->declare_parameter("imu_topic", "imu");
   this->get_parameter("imu_topic", imu_topic);
   imu_publisher_ = this->create_publisher<sensor_msgs::msg::Imu>(imu_topic, 10);
+
+  // Setup topic for velocity.
+  std::string velocity_topic;
+  this->declare_parameter("velocity_topic", "velocity");
+  this->get_parameter("velocity_topic", velocity_topic);
+  velocity_publisher_ = this->create_publisher<geometry_msgs::msg::TwistStamped>(velocity_topic, 10);
+
+  // Setup topic for battery.
+  std::string battery_topic;
+  this->declare_parameter("battery_topic", "battery");
+  this->get_parameter("battery_topic", battery_topic);
+  battery_publisher_ = this->create_publisher<sensor_msgs::msg::BatteryState>(battery_topic, 10);
 
   // Setup topic for joystick.
   std::string joy_topic;
@@ -186,6 +209,20 @@ void Component::publish_imu(const sensor_msgs::msg::Imu & msg)
 {
   if (imu_publisher_) {
     imu_publisher_->publish(msg);
+  }
+}
+
+void Component::publish_velocity(const geometry_msgs::msg::TwistStamped & msg)
+{
+  if (velocity_publisher_) {
+    velocity_publisher_->publish(msg);
+  }
+}
+
+void Component::publish_battery(const sensor_msgs::msg::BatteryState & msg)
+{
+  if (battery_publisher_) {
+    battery_publisher_->publish(msg);
   }
 }
 
@@ -266,12 +303,57 @@ void Component::work()
             SurvivePose pose = {};
             auto timecode = survive_simple_object_get_latest_pose(pose_event->object, &pose);
             if (timecode > 0) {
+              const std::string serial = survive_simple_serial_number(pose_event->object);
+
               geometry_msgs::msg::TransformStamped pose_msg;
               pose_msg.header.stamp = this->get_ros_time("tracker", timecode);
               pose_msg.header.frame_id = tracking_frame_;
-              pose_msg.child_frame_id = survive_simple_serial_number(pose_event->object);
+              pose_msg.child_frame_id = serial;
               ros_from_pose(&pose_msg.transform, pose);
               tf_broadcaster_->sendTransform(pose_msg);
+
+              SurviveVelocity velocity = {};
+              const auto velocity_timecode =
+                survive_simple_object_get_latest_velocity(pose_event->object, &velocity);
+              if (velocity_timecode > 0) {
+                const tf2::Quaternion q_body_from_world = body_from_world_quaternion(pose);
+                const tf2::Vector3 linear_world(
+                  velocity.Pos[0], velocity.Pos[1], velocity.Pos[2]);
+                const tf2::Vector3 angular_world(
+                  velocity.AxisAngleRot[0], velocity.AxisAngleRot[1], velocity.AxisAngleRot[2]);
+                const tf2::Vector3 linear_body = tf2::quatRotate(q_body_from_world, linear_world);
+                const tf2::Vector3 angular_body = tf2::quatRotate(q_body_from_world, angular_world);
+
+                geometry_msgs::msg::TwistStamped velocity_msg;
+                velocity_msg.header.stamp = this->get_ros_time("velocity", velocity_timecode);
+                velocity_msg.header.frame_id = serial;
+                velocity_msg.twist.linear.x = linear_body.x();
+                velocity_msg.twist.linear.y = linear_body.y();
+                velocity_msg.twist.linear.z = linear_body.z();
+                velocity_msg.twist.angular.x = angular_body.x();
+                velocity_msg.twist.angular.y = angular_body.y();
+                velocity_msg.twist.angular.z = angular_body.z();
+                publish_velocity(velocity_msg);
+              }
+
+              SurviveObject * so = survive_simple_get_survive_object(pose_event->object);
+              if (so != nullptr) {
+                sensor_msgs::msg::BatteryState battery_msg;
+                battery_msg.header.stamp = pose_msg.header.stamp;
+                battery_msg.header.frame_id = serial;
+                battery_msg.present = so->ison;
+
+                if (so->charge >= 0 && so->charge <= 100) {
+                  battery_msg.percentage = static_cast<float>(so->charge) / 100.0F;
+                } else {
+                  battery_msg.percentage = std::numeric_limits<float>::quiet_NaN();
+                }
+
+                battery_msg.power_supply_status = so->charging
+                  ? sensor_msgs::msg::BatteryState::POWER_SUPPLY_STATUS_CHARGING
+                  : sensor_msgs::msg::BatteryState::POWER_SUPPLY_STATUS_DISCHARGING;
+                publish_battery(battery_msg);
+              }
 
               update_occlusion_state(pose_event->object, timecode);
             }

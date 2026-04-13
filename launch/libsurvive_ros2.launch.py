@@ -62,6 +62,10 @@ def generate_launch_description():
                               description='Joy button index used as alignment trigger'),
         DeclareLaunchArgument('occlusion_topic', default_value='occlusion',
                       description='Topic name for per-device occlusion status messages'),
+        DeclareLaunchArgument('velocity_topic', default_value='velocity',
+                      description='Topic name for per-device velocity stream'),
+        DeclareLaunchArgument('battery_topic', default_value='battery',
+                      description='Topic name for per-device battery stream'),
         DeclareLaunchArgument('record', default_value='false',
                               description='Record data with rosbag')]
 
@@ -82,6 +86,8 @@ def generate_launch_description():
         },
         {'tracking_frame': LaunchConfiguration('tracking_frame')},
         {'imu_topic': 'imu'},
+        {'velocity_topic': LaunchConfiguration('velocity_topic')},
+        {'battery_topic': LaunchConfiguration('battery_topic')},
         {'joy_topic': 'joy'},
         {'cfg_topic': 'cfg'},
         {'occlusion_topic': LaunchConfiguration('occlusion_topic')},
