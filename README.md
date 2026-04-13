@@ -130,6 +130,9 @@ There are launch arguments to `libsurvive_ros2.launch.py` to help get up and run
 - `tracking_frame = string (default: 'libsurvive_world')`: Parent frame used for tracked device and lighthouse poses.
 - `config_path = string (default: package `config/config.json`)`: Path to a libsurvive calibration config file.
 - `force_recalibrate = boolean (default: false)`: Request a fresh libsurvive calibration run.
+- `enable_world_alignment = boolean (default: true)`: Run helper node that publishes static transform between `world` and `tracking_frame` from joy button press.
+- `world_frame = string (default: 'world')`: World frame name used by the alignment helper node.
+- `world_align_button_index = int (default: 3)`: Joy button index used as alignment trigger.
 
 # Common questions
 

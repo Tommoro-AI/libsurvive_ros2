@@ -54,6 +54,12 @@ def generate_launch_description():
             default_value=CFG_FILE,
             description=('Path to a libsurvive calibration config file. '
                          f'Default: {CFG_FILE}')),
+        DeclareLaunchArgument('enable_world_alignment', default_value='true',
+                              description='Publish static world<->tracking_frame alignment from joy button press'),
+        DeclareLaunchArgument('world_frame', default_value='world',
+                              description='World frame name for static alignment transform'),
+        DeclareLaunchArgument('world_align_button_index', default_value='3',
+                              description='Joy button index used as alignment trigger'),
         DeclareLaunchArgument('record', default_value='false',
                               description='Record data with rosbag')]
 
@@ -118,9 +124,23 @@ def generate_launch_description():
         condition=IfCondition(LaunchConfiguration('record')),
         output='log')
 
+    world_align_node = Node(
+        package='libsurvive_ros2',
+        executable='libsurvive_world_align_node',
+        name='libsurvive_world_align_node',
+        condition=IfCondition(LaunchConfiguration('enable_world_alignment')),
+        output='screen',
+        parameters=[
+            {'joy_topic': PythonExpression(['"/', LaunchConfiguration('namespace'), '/joy"'])},
+            {'tracking_frame': LaunchConfiguration('tracking_frame')},
+            {'world_frame': LaunchConfiguration('world_frame')},
+            {'button_index': LaunchConfiguration('world_align_button_index')},
+        ])
+
     return LaunchDescription(
         arguments + [
             libsurvive_node,
             libsurvive_composable_node,
+            world_align_node,
             bag_record_node
         ])

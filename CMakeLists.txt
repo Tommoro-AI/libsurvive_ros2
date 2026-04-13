@@ -111,6 +111,16 @@ add_executable(libsurvive_ros2_node src/node.cpp)
 target_link_libraries(libsurvive_ros2_node libsurvive_ros2_component)
 ament_target_dependencies(libsurvive_ros2_node rclcpp)
 
+# Publish static world<->libsurvive_world alignment from joy button events
+add_executable(libsurvive_world_align_node src/world_align_node.cpp)
+ament_target_dependencies(
+  libsurvive_world_align_node
+  rclcpp
+  geometry_msgs
+  sensor_msgs
+  tf2
+  tf2_ros)
+
 # Install the component
 install(
   TARGETS libsurvive_ros2_component
@@ -120,6 +130,9 @@ install(
 
 # Install the node
 install(TARGETS libsurvive_ros2_node DESTINATION lib/${PROJECT_NAME})
+
+# Install the world alignment helper node
+install(TARGETS libsurvive_world_align_node DESTINATION lib/${PROJECT_NAME})
 
 # Install the shared things
 install(DIRECTORY config launch DESTINATION share/${PROJECT_NAME})
