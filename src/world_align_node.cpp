@@ -1,3 +1,4 @@
+#include <cmath>
 #include <memory>
 #include <string>
 #include <unordered_map>
@@ -22,7 +23,7 @@ public:
           joy_topic_{declare_parameter<std::string>("joy_topic", "/libsurvive/joy")},
           tracking_frame_{declare_parameter<std::string>("tracking_frame", "libsurvive_world")},
           world_frame_{declare_parameter<std::string>("world_frame", "world")},
-          button_index_{declare_parameter<int>("button_index", 3)},
+          button_index_{static_cast<int>(declare_parameter<int>("button_index", 3))},
           lookup_timeout_{
               rclcpp::Duration::from_seconds(declare_parameter<double>("lookup_timeout_sec", 0.1))},
           tf_buffer_{get_clock()},
@@ -46,19 +47,28 @@ public:
 private:
     static tf2::Transform TrackerToWorldTransform(const tf2::Transform &tracker_wrt_libsurvive)
     {
-        // Change-of-basis in tracker frame:
-        // x_world = -y_tracker, y_world = -x_tracker, z_world = -z_tracker.
+        // Keep world z aligned with libsurvive z, and define heading from tracker-derived
+        // direction projected onto the xy plane.
+        constexpr double kMinNorm = 1e-6;
 
-        // clang-format off
-        static const tf2::Matrix3x3 kWorldBasisWrtTracker(0.0, -1.0, 0.0,
-                                                          -1.0, 0.0, 0.0,
-                                                          0.0, 0.0, -1.0);
-        // clang-format on
+        const tf2::Matrix3x3 basis_tracker_wrt_libsurvive = tracker_wrt_libsurvive.getBasis();
 
-        const tf2::Matrix3x3 world_basis_wrt_libsurvive =
-            tracker_wrt_libsurvive.getBasis() * kWorldBasisWrtTracker;
+        tf2::Vector3 x_world_wrt_libsurvive = -basis_tracker_wrt_libsurvive.getColumn(1);
+        x_world_wrt_libsurvive.setZ(0.0);
+        if (x_world_wrt_libsurvive.length2() < kMinNorm)
+        {
+            x_world_wrt_libsurvive = -basis_tracker_wrt_libsurvive.getColumn(0);
+            x_world_wrt_libsurvive.setZ(0.0);
+        }
+        if (x_world_wrt_libsurvive.length2() < kMinNorm)
+        {
+            x_world_wrt_libsurvive = tf2::Vector3(1.0, 0.0, 0.0);
+        }
+        x_world_wrt_libsurvive.normalize();
+
+        const double yaw = std::atan2(x_world_wrt_libsurvive.y(), x_world_wrt_libsurvive.x());
         tf2::Quaternion world_quat_wrt_libsurvive;
-        world_basis_wrt_libsurvive.getRotation(world_quat_wrt_libsurvive);
+        world_quat_wrt_libsurvive.setRPY(0.0, 0.0, yaw);
         world_quat_wrt_libsurvive.normalize();
         return tf2::Transform(world_quat_wrt_libsurvive, tracker_wrt_libsurvive.getOrigin());
     }
