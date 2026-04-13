@@ -1,0 +1,10 @@
+{
+	"alwaysActivate": true,
+	"name" : "survive",
+	"loadPriority": 10,
+	"resourceOnly" : false,
+	"hmd_presence" :
+	[
+		"*.*"
+	]
+}

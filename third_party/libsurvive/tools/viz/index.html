@@ -1,0 +1,66 @@
+
+<html>
+  <head>
+    <script
+      src="https://code.jquery.com/jquery-3.3.1.slim.min.js"
+      integrity="sha256-3edrmyuQ0w65f8gfBsqowzjJe2iM6n0nKciPUp8y+7E="
+      crossorigin="anonymous"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r100/three.min.js"></script>
+    <script src="./lib/OrbitControls.js"></script>
+    <script src="./lib/js-colormaps.js"></script>
+    <script src="https://unpkg.com/svd-js" type="application/javascript"></script>
+    <script src="survive_viewer.js"></script>
+  </head>
+  <body>
+    <div id="ThreeJS" style="z-index: 1; position: absolute; left:0px; top:0px" ></div>
+    <div id="cam-control" style="z-index: 2;border:1px solid white;position:absolute">
+      <input type="checkbox" id="trails" checked>Trails</input><br/>
+      <input type="checkbox" id="fpv">FPV</input><br/>
+      <input type="checkbox" id="model" checked>Model</input><br/>
+      <input type="checkbox" id="imu" checked>IMU</input><br/>
+      <input type="checkbox" id="external_displace" checked>Shift External</input><br/>
+      <button id="copy-camera">&#128203;</button>
+      <button id="toggleBtn">
+        Toggle 2D View
+      </button>
+    </div>
+    <div id="fps" style="
+    z-index:3;
+    position:absolute;
+    right:20px;
+    top:10px;
+">30fps</div>
+    <div id="cam" style="display:none;position:absolute;right:30px;top:30px;z-index: 100">
+      <canvas width=800 height=800 id="camcanvas"></canvas>
+    </div>
+
+    <div id="console" style="
+    width: 30%;
+    min-width: 200px;
+    height: 200px;
+    border: 1px solid white;
+    position: absolute;
+    bottom: 20px;
+    overflow: auto;
+    white-space: pre;
+    background-color: rgba(0,200,200, .25);
+    z-index: 3;
+">
+
+    </div>
+    <div style="z-index: 3;display: none;position: absolute;
+    background: lightyellow;
+    padding: 3px;
+    border-radius: 3px;
+    border: 1px solid black;" id="tooltip"></div>
+    <input type="range" id="time" style="
+    right: 20px;
+    width: 50%;
+    margin: 0px;
+    position: absolute;
+    bottom: 20px;
+    margin-left: -500px;
+    z-index: 3;"
+           min="0" max="100" value="100" step=".01" />
+  </body>
+</html>

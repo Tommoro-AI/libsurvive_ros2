@@ -1,0 +1,67 @@
+# Linux
+.idea
+*.o
+*.so
+lib
+calibrate_client
+calibrate
+test
+simple_pose_test
+cmake-build-*
+survive
+survive-cli
+sensors-readout
+api_example
+build*
+
+# clangd cache
+.cache/
+
+# Temp files
+*~
+*/\#*\#
+\#*\#
+
+# Tool output
+*.json
+*.config
+*.csv
+calinfo/
+*.log
+*.png
+*.sage.py
+*.rec
+*.zip
+*.avi
+do_calib/*
+
+# Windows specific
+*.dll
+*.exe
+obj/
+bin/
+x64/
+packages
+.vs/
+Debug/
+Release/
+*.VC.db
+*.user
+*.ipch
+*.tlog
+*.d
+build
+
+.options
+.zip
+.avi
+
+# Python related
+*/__pycache__
+*.pyc
+
+venv
+.eggs/
+dist/
+pysurvive.egg-info/
+_skbuild/
