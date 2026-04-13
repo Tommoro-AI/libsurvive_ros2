@@ -42,7 +42,7 @@ include(FetchContent)
 FetchContent_Declare(
   libsurvive_src
   GIT_REPOSITORY https://github.com/cntools/libsurvive.git
-  GIT_TAG 32cf62c52744fdc32003ef8169e8b81f6f31526b)
+  GIT_TAG 2f4303c76f53be1919d89d801172fddd7b09aa7a)
 FetchContent_MakeAvailable(libsurvive_src)
 
 if(TARGET survive)
