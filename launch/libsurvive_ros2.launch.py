@@ -22,56 +22,28 @@ import os
 
 from ament_index_python.packages import get_package_share_directory
 
-import launch
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, ExecuteProcess
+from launch.actions import DeclareLaunchArgument, OpaqueFunction
 from launch.conditions import IfCondition, UnlessCondition
-from launch.substitutions import LaunchConfiguration, PythonExpression
+from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import ComposableNodeContainer, Node
 from launch_ros.descriptions import ComposableNode
 
-# Bag to save data
-BAG_FILE = os.path.join(launch.logging.launch_config.log_dir, 'libsurvive.bag')
+def _launch_setup(context):
+    config_dir = LaunchConfiguration('config_dir').perform(context).strip()
+    force_recalibrate = LaunchConfiguration('force_recalibrate').perform(context).strip()
+    tracking_frame = LaunchConfiguration('tracking_frame').perform(context).strip()
+    world_frame = LaunchConfiguration('world_frame').perform(context).strip()
 
-# Default libsurvive configuration file
-CFG_FILE = os.path.join(
-    get_package_share_directory('libsurvive_ros2'), 'config', 'config.json'
-)
+    driver_args = ""
+    if force_recalibrate == "true":
+        driver_args = "--force-recalibrate 1"
+        if config_dir:
+            driver_args += f" -c {config_dir}/libsurvive/config.json"
 
-
-def generate_launch_description():
-    arguments = [
-        DeclareLaunchArgument('namespace', default_value='libsurvive',
-                              description='Namespace for the non-TF topics'),
-        DeclareLaunchArgument('composable', default_value='false',
-                              description='Launch in a composable container'),
-        DeclareLaunchArgument('tracking_frame', default_value='libsurvive_world',
-                              description='Frame used as the parent frame for tracked poses'),
-        DeclareLaunchArgument('world_frame', default_value='world',
-                              description='World frame name for static alignment transform'),
-        DeclareLaunchArgument('force_recalibrate', default_value='false',
-                              description='Whether to force a fresh libsurvive calibration'),
-        DeclareLaunchArgument('config_path', default_value=CFG_FILE,
-                              description=('Path to a libsurvive calibration config file. 'f'Default: {CFG_FILE}')),
-        DeclareLaunchArgument('record', default_value='false',
-                              description='Record data with rosbag')]
-
-    # So we don't have to repeat for composable and non-composable versions.
     parameters = [
-        {
-            'driver_args': PythonExpression([
-                '"--force-recalibrate 1 " if "',
-                LaunchConfiguration('force_recalibrate'),
-                '" == "true" else ""',
-                ' + ',
-                '"-c ',
-                LaunchConfiguration('config_path'),
-                '" if "',
-                LaunchConfiguration('config_path'),
-                '" != "" else ""'
-            ])
-        },
-        {'tracking_frame': LaunchConfiguration('tracking_frame')},
+        {'driver_args': driver_args},
+        {'tracking_frame': tracking_frame},
         {'imu_topic': 'imu'},
         {'joy_topic': 'joy'},
         {'cfg_topic': 'cfg'},
@@ -81,6 +53,8 @@ def generate_launch_description():
         {'lighthouse_rate': 4.0}
     ]
 
+    extra_env = {'XDG_CONFIG_HOME': config_dir} if config_dir else {}
+
     # Non-composable launch (regular node)
     libsurvive_node = Node(
         package='libsurvive_ros2',
@@ -89,6 +63,7 @@ def generate_launch_description():
         namespace=LaunchConfiguration('namespace'),
         condition=UnlessCondition(LaunchConfiguration('composable')),
         output='screen',
+        additional_env=extra_env,
         parameters=parameters)
 
     # Composable launch (zero-copy node example)
@@ -98,6 +73,7 @@ def generate_launch_description():
         name='libsurvive_ros2_container',
         namespace=LaunchConfiguration('namespace'),
         condition=IfCondition(LaunchConfiguration('composable')),
+        additional_env=extra_env,
         composable_node_descriptions=[
             ComposableNode(
                 package='libsurvive_ros2',
@@ -112,14 +88,6 @@ def generate_launch_description():
         output='log')
 
     # For recording all data from the experiment
-    bag_record_node = ExecuteProcess(
-        cmd=['ros2', 'bag', 'record', '-o', BAG_FILE] + [
-            '/tf',
-            '/tf_static'
-        ],
-        condition=IfCondition(LaunchConfiguration('record')),
-        output='log')
-
     world_align_node = Node(
         package='libsurvive_ros2',
         executable='libsurvive_world_align_node',
@@ -127,15 +95,35 @@ def generate_launch_description():
         namespace=LaunchConfiguration('namespace'),
         output='screen',
         parameters=[
-            {'tracking_frame': LaunchConfiguration('tracking_frame')},
-            {'world_frame': LaunchConfiguration('world_frame')},
+            {'tracking_frame': tracking_frame},
+            {'world_frame': world_frame},
             {'joy_topic': 'joy'},
         ])
 
-    return LaunchDescription(
-        arguments + [
-            libsurvive_node,
-            libsurvive_composable_node,
-            world_align_node,
-            bag_record_node
-        ])
+    return [
+        libsurvive_node,
+        libsurvive_composable_node,
+        world_align_node,
+    ]
+
+
+def generate_launch_description():
+    default_config_dir = os.path.join(get_package_share_directory('libsurvive_ros2'), 'config')
+
+    arguments = [
+        DeclareLaunchArgument('namespace', default_value='libsurvive',
+                              description='Namespace for the non-TF topics'),
+        DeclareLaunchArgument('composable', default_value='false',
+                              description='Launch in a composable container'),
+        DeclareLaunchArgument('tracking_frame', default_value='libsurvive_world',
+                              description='Frame used as the parent frame for tracked poses'),
+        DeclareLaunchArgument('world_frame', default_value='world',
+                              description='World frame name for static alignment transform'),
+        DeclareLaunchArgument('force_recalibrate', default_value='false',
+                              description='Whether to force a fresh libsurvive calibration'),
+        DeclareLaunchArgument('config_dir', default_value=default_config_dir,
+                              description=('Path to a libsurvive calibration config directory. '
+                                           f'Default: {default_config_dir}')),
+    ]
+
+    return LaunchDescription(arguments + [OpaqueFunction(function=_launch_setup)])

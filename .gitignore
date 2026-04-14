@@ -3,3 +3,4 @@ __pycache__/
 *.pyc
 *.pyo
 .pytest_cache/
+config/libsurvive/config.json
