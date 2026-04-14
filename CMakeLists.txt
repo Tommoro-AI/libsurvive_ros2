@@ -60,7 +60,6 @@ endif()
 find_package(ament_cmake REQUIRED)
 find_package(rosidl_default_generators REQUIRED)
 find_package(rclcpp REQUIRED)
-find_package(rclcpp_components REQUIRED)
 find_package(diagnostic_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(sensor_msgs REQUIRED)
@@ -89,7 +88,6 @@ target_compile_definitions(libsurvive_ros2_component
 ament_target_dependencies(
   libsurvive_ros2_component
   rclcpp
-  rclcpp_components
   diagnostic_msgs
   geometry_msgs
   sensor_msgs
@@ -99,8 +97,6 @@ ament_target_dependencies(
 rosidl_get_typesupport_target(cpp_typesupport_target ${PROJECT_NAME}
                               "rosidl_typesupport_cpp")
 target_link_libraries(libsurvive_ros2_component ${cpp_typesupport_target})
-rclcpp_components_register_nodes(libsurvive_ros2_component
-                                 "libsurvive_ros2::Component")
 
 # Manually compose the component into a node
 add_executable(libsurvive_ros2_node src/node.cpp)

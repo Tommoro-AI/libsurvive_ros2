@@ -24,10 +24,8 @@ from ament_index_python.packages import get_package_share_directory
 
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, OpaqueFunction
-from launch.conditions import IfCondition, UnlessCondition
 from launch.substitutions import LaunchConfiguration
-from launch_ros.actions import ComposableNodeContainer, Node
-from launch_ros.descriptions import ComposableNode
+from launch_ros.actions import Node
 
 def _launch_setup(context):
     config_dir = LaunchConfiguration('config_dir').perform(context).strip()
@@ -61,31 +59,9 @@ def _launch_setup(context):
         executable='libsurvive_ros2_node',
         name='libsurvive_ros2_node',
         namespace=LaunchConfiguration('namespace'),
-        condition=UnlessCondition(LaunchConfiguration('composable')),
         output='screen',
         additional_env=extra_env,
         parameters=parameters)
-
-    # Composable launch (zero-copy node example)
-    libsurvive_composable_node = ComposableNodeContainer(
-        package='rclcpp_components',
-        executable='component_container',
-        name='libsurvive_ros2_container',
-        namespace=LaunchConfiguration('namespace'),
-        condition=IfCondition(LaunchConfiguration('composable')),
-        additional_env=extra_env,
-        composable_node_descriptions=[
-            ComposableNode(
-                package='libsurvive_ros2',
-                plugin='libsurvive_ros2::Component',
-                name='libsurvive_ros2_component',
-                parameters=parameters,
-                extra_arguments=[
-                    {'use_intra_process_comms': True}
-                ]
-            )
-        ],
-        output='log')
 
     # For recording all data from the experiment
     world_align_node = Node(
@@ -102,7 +78,6 @@ def _launch_setup(context):
 
     return [
         libsurvive_node,
-        libsurvive_composable_node,
         world_align_node,
     ]
 
@@ -113,8 +88,6 @@ def generate_launch_description():
     arguments = [
         DeclareLaunchArgument('namespace', default_value='libsurvive',
                               description='Namespace for the non-TF topics'),
-        DeclareLaunchArgument('composable', default_value='false',
-                              description='Launch in a composable container'),
         DeclareLaunchArgument('tracking_frame', default_value='libsurvive_world',
                               description='Frame used as the parent frame for tracked poses'),
         DeclareLaunchArgument('world_frame', default_value='world',
