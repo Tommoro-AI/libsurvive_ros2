@@ -62,6 +62,7 @@ public:
     void publish_imu(const sensor_msgs::msg::Imu &msg);
     void publish_velocity(const geometry_msgs::msg::TwistStamped &msg);
     void publish_battery(const sensor_msgs::msg::BatteryState &msg);
+    void publish_device_battery(const SurviveSimpleObject *object, const rclcpp::Time &stamp);
     void update_occlusion_state(const SurviveSimpleObject *object, FLT pose_timecode);
     void publish_device_occlusion(const std::string &serial, bool occluded, FLT timecode);
 
@@ -78,6 +79,7 @@ private:
     rclcpp::Publisher<diagnostic_msgs::msg::KeyValue>::SharedPtr cfg_publisher_;
     std::thread worker_thread_;
     rclcpp::Time last_base_station_update_;
+    std::unordered_map<std::string, int64_t> last_battery_publish_ns_by_device_;
     std::string tracking_frame_;
     std::string occlusion_topic_base_;
     std::unordered_map<std::string, bool> occlusion_by_device_;
