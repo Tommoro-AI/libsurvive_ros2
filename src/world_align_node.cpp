@@ -23,7 +23,6 @@ public:
           joy_topic_{declare_parameter<std::string>("joy_topic", "/libsurvive/joy")},
           tracking_frame_{declare_parameter<std::string>("tracking_frame", "libsurvive_world")},
           world_frame_{declare_parameter<std::string>("world_frame", "world")},
-          button_index_{static_cast<int>(declare_parameter<int>("button_index", 3))},
           lookup_timeout_{
               rclcpp::Duration::from_seconds(declare_parameter<double>("lookup_timeout_sec", 0.1))},
           tf_buffer_{get_clock()},

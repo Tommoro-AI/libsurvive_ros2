@@ -47,25 +47,12 @@ def generate_launch_description():
                               description='Launch in a composable container'),
         DeclareLaunchArgument('tracking_frame', default_value='libsurvive_world',
                               description='Frame used as the parent frame for tracked poses'),
-        DeclareLaunchArgument('force_recalibrate', default_value='false',
-                              description='Whether to force a fresh libsurvive calibration'),
-        DeclareLaunchArgument(
-            'config_path',
-            default_value=CFG_FILE,
-            description=('Path to a libsurvive calibration config file. '
-                         f'Default: {CFG_FILE}')),
-        DeclareLaunchArgument('enable_world_alignment', default_value='true',
-                              description='Publish static world<->tracking_frame alignment from joy button press'),
         DeclareLaunchArgument('world_frame', default_value='world',
                               description='World frame name for static alignment transform'),
-        DeclareLaunchArgument('world_align_button_index', default_value='3',
-                              description='Joy button index used as alignment trigger'),
-        DeclareLaunchArgument('occlusion_topic', default_value='occlusion',
-                      description='Topic name for per-device occlusion status messages'),
-        DeclareLaunchArgument('velocity_topic', default_value='velocity',
-                      description='Topic name for per-device velocity stream'),
-        DeclareLaunchArgument('battery_topic', default_value='battery',
-                      description='Topic name for per-device battery stream'),
+        DeclareLaunchArgument('force_recalibrate', default_value='false',
+                              description='Whether to force a fresh libsurvive calibration'),
+        DeclareLaunchArgument('config_path', default_value=CFG_FILE,
+                              description=('Path to a libsurvive calibration config file. 'f'Default: {CFG_FILE}')),
         DeclareLaunchArgument('record', default_value='false',
                               description='Record data with rosbag')]
 
@@ -86,11 +73,11 @@ def generate_launch_description():
         },
         {'tracking_frame': LaunchConfiguration('tracking_frame')},
         {'imu_topic': 'imu'},
-        {'velocity_topic': LaunchConfiguration('velocity_topic')},
-        {'battery_topic': LaunchConfiguration('battery_topic')},
         {'joy_topic': 'joy'},
         {'cfg_topic': 'cfg'},
-        {'occlusion_topic': LaunchConfiguration('occlusion_topic')},
+        {'velocity_topic': 'velocity'},
+        {'battery_topic': 'battery'},
+        {'occlusion_topic': 'occlusion'},
         {'lighthouse_rate': 4.0}
     ]
 
@@ -137,13 +124,12 @@ def generate_launch_description():
         package='libsurvive_ros2',
         executable='libsurvive_world_align_node',
         name='libsurvive_world_align_node',
-        condition=IfCondition(LaunchConfiguration('enable_world_alignment')),
+        namespace=LaunchConfiguration('namespace'),
         output='screen',
         parameters=[
-            {'joy_topic': PythonExpression(['"/', LaunchConfiguration('namespace'), '/joy"'])},
             {'tracking_frame': LaunchConfiguration('tracking_frame')},
             {'world_frame': LaunchConfiguration('world_frame')},
-            {'button_index': LaunchConfiguration('world_align_button_index')},
+            {'joy_topic': 'joy'},
         ])
 
     return LaunchDescription(
