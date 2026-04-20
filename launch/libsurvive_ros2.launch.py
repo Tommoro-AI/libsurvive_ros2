@@ -30,7 +30,6 @@ from launch_ros.actions import Node
 def _launch_setup(context):
     config_dir = LaunchConfiguration('config_dir').perform(context).strip()
     force_recalibrate = LaunchConfiguration('force_recalibrate').perform(context).strip()
-    tracking_frame = LaunchConfiguration('tracking_frame').perform(context).strip()
     world_frame = LaunchConfiguration('world_frame').perform(context).strip()
 
     driver_args = ""
@@ -41,7 +40,6 @@ def _launch_setup(context):
 
     parameters = [
         {'driver_args': driver_args},
-        {'tracking_frame': tracking_frame},
         {'imu_topic': 'imu'},
         {'joy_topic': 'joy'},
         {'cfg_topic': 'cfg'},
@@ -71,7 +69,6 @@ def _launch_setup(context):
         namespace=LaunchConfiguration('namespace'),
         output='screen',
         parameters=[
-            {'tracking_frame': tracking_frame},
             {'world_frame': world_frame},
             {'joy_topic': 'joy'},
         ])
@@ -88,8 +85,6 @@ def generate_launch_description():
     arguments = [
         DeclareLaunchArgument('namespace', default_value='libsurvive',
                               description='Namespace for the non-TF topics'),
-        DeclareLaunchArgument('tracking_frame', default_value='libsurvive_world',
-                              description='Frame used as the parent frame for tracked poses'),
         DeclareLaunchArgument('world_frame', default_value='world',
                               description='World frame name for static alignment transform'),
         DeclareLaunchArgument('force_recalibrate', default_value='false',

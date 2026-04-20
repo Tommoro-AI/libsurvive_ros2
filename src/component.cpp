@@ -116,8 +116,7 @@ Component::Component(const rclcpp::NodeOptions & options)
   _singleton = this;
 
   // Global parameters
-  this->declare_parameter("tracking_frame", "libsurvive_frame");
-  this->get_parameter("tracking_frame", tracking_frame_);
+  parent_frame_ = "libsurvive_world";
   this->declare_parameter("lighthouse_rate", 4.0);
   this->get_parameter("lighthouse_rate", lighthouse_rate_);
 
@@ -351,7 +350,7 @@ void Component::work()
 
               geometry_msgs::msg::TransformStamped pose_msg;
               pose_msg.header.stamp = this->get_ros_time("tracker", timecode);
-              pose_msg.header.frame_id = tracking_frame_;
+              pose_msg.header.frame_id = parent_frame_;
               pose_msg.child_frame_id = serial;
               ros_from_pose(&pose_msg.transform, pose);
               tf_broadcaster_->sendTransform(pose_msg);
@@ -458,7 +457,7 @@ void Component::work()
           if (timecode > 0) {
             geometry_msgs::msg::TransformStamped pose_msg;
             pose_msg.header.stamp = this->get_ros_time("lighthouse", timecode);
-            pose_msg.header.frame_id = tracking_frame_;
+            pose_msg.header.frame_id = parent_frame_;
             pose_msg.child_frame_id = survive_simple_serial_number(it);
             ros_from_pose(&pose_msg.transform, pose);
             tf_static_broadcaster_->sendTransform(pose_msg);

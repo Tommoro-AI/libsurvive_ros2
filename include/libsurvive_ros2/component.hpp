@@ -80,7 +80,7 @@ private:
     std::thread worker_thread_;
     rclcpp::Time last_base_station_update_;
     std::unordered_map<std::string, int64_t> last_battery_publish_ns_by_device_;
-    std::string tracking_frame_;
+    std::string parent_frame_;
     std::string occlusion_topic_base_;
     std::unordered_map<std::string, bool> occlusion_by_device_;
     std::unordered_map<std::string, int> occlusion_enter_count_by_device_;

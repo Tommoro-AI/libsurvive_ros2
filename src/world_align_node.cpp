@@ -24,7 +24,7 @@ public:
     WorldAlignNode()
         : rclcpp::Node{"libsurvive_world_align_node"},
           joy_topic_{declare_parameter<std::string>("joy_topic", "/libsurvive/joy")},
-          tracking_frame_{declare_parameter<std::string>("tracking_frame", "libsurvive_world")},
+          parent_frame_{"libsurvive_world"},
           world_frame_{declare_parameter<std::string>("world_frame", "world")},
           lookup_timeout_{
               rclcpp::Duration::from_seconds(declare_parameter<double>("lookup_timeout_sec", 0.1))},
@@ -44,10 +44,10 @@ public:
             create_wall_timer(std::chrono::milliseconds(100), [this]() { TryAutoAlign(); });
 
         RCLCPP_INFO(get_logger(),
-                    "World align node started. joy_topic=%s tracking_frame=%s world_frame=%s "
+                    "World align node started. joy_topic=%s parent_frame=%s world_frame=%s "
                     "button_index=%d",
                     joy_topic_.c_str(),
-                    tracking_frame_.c_str(),
+                    parent_frame_.c_str(),
                     world_frame_.c_str(),
                     button_index_);
     }
@@ -59,7 +59,7 @@ private:
         try
         {
             const auto tf_msg =
-                tf_buffer_.lookupTransform(tracking_frame_, tracker_frame, stamp, lookup_timeout_);
+                tf_buffer_.lookupTransform(parent_frame_, tracker_frame, stamp, lookup_timeout_);
 
             tf2::Transform t_lt;
             tf2::fromMsg(tf_msg.transform, t_lt);
@@ -69,7 +69,7 @@ private:
             geometry_msgs::msg::TransformStamped world_to_lib;
             world_to_lib.header.stamp = tf_msg.header.stamp;
             world_to_lib.header.frame_id = world_frame_;
-            world_to_lib.child_frame_id = tracking_frame_;
+            world_to_lib.child_frame_id = parent_frame_;
             world_to_lib.transform = tf2::toMsg(t_wl);
             static_broadcaster_->sendTransform(world_to_lib);
 
@@ -179,7 +179,7 @@ private:
 
         for (const auto &transform : msg->transforms)
         {
-            if (transform.header.frame_id != tracking_frame_ || transform.child_frame_id.empty())
+            if (transform.header.frame_id != parent_frame_ || transform.child_frame_id.empty())
             {
                 continue;
             }
@@ -204,7 +204,7 @@ private:
     }
 
     std::string joy_topic_;
-    std::string tracking_frame_;
+    std::string parent_frame_;
     std::string world_frame_;
     rclcpp::Duration lookup_timeout_;
     const int button_index_{3};

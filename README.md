@@ -124,12 +124,11 @@ There are launch arguments to `libsurvive_ros2.launch.py` to help get up and run
 - `namespace = string (default: 'libsurvive')` : This is the namespace on which to add the extra topics for sensor data.
 - `record = boolean (default: false)` : Start a `ros2 bag record` to save `/tf` and `/tf_static` topics to a ros bag in the ROS2 log directory for the current launch ID as `libsurvive.bag`.
 - `composable = boolean (default: false)`: For advanced users only -- it shows how to load the component-based version of the code to get zero-copy IPC between it and other composable nodes. 
-- `tracking_frame = string (default: 'libsurvive_world')`: Parent frame used for tracked device and lighthouse poses.
 - `config_path = string (default: package `config/config.json`)`: Path to a libsurvive calibration config file.
 - `force_recalibrate = boolean (default: false)`: Request a fresh libsurvive calibration run.
 - `velocity_topic = string (default: 'velocity')`: Topic for per-device velocity (`geometry_msgs/TwistStamped`).
 - `battery_topic = string (default: 'battery')`: Topic for per-device battery state (`sensor_msgs/BatteryState`).
-- `enable_world_alignment = boolean (default: true)`: Run helper node that publishes static transform between `world` and `tracking_frame` from joy button press.
+- `enable_world_alignment = boolean (default: true)`: Run helper node that publishes static transform between `world_frame` and `libsurvive_world` from joy button press.
 - `world_frame = string (default: 'world')`: World frame name used by the alignment helper node.
 - `world_align_button_index = int (default: 3)`: Joy button index used as alignment trigger.
 - `occlusion_topic = string (default: 'occlusion')`: Occlusion status topic (`libsurvive_ros2/msg/OcclusionStatus`).
