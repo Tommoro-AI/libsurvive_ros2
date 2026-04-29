@@ -19,6 +19,7 @@
 # THE SOFTWARE.
 
 import os
+from pathlib import Path
 
 from ament_index_python.packages import get_package_share_directory
 
@@ -27,16 +28,27 @@ from launch.actions import DeclareLaunchArgument, OpaqueFunction
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 
+
+def _clear_existing_config(config_dir):
+    config_root = Path(config_dir) / 'libsurvive'
+    config_root.mkdir(parents=True, exist_ok=True)
+    config_file = config_root / 'config.json'
+    config_file.write_text('', encoding='utf-8')
+
+
 def _launch_setup(context):
     config_dir = LaunchConfiguration('config_dir').perform(context).strip()
     force_recalibrate = LaunchConfiguration('force_recalibrate').perform(context).strip()
     world_frame = LaunchConfiguration('world_frame').perform(context).strip()
 
-    driver_args = ""
-    if force_recalibrate == "true":
-        driver_args = "--force-recalibrate 1"
+    if config_dir:
+        _clear_existing_config(config_dir)
+
+    driver_args = ''
+    if force_recalibrate == 'true':
+        driver_args = '--force-recalibrate 1'
         if config_dir:
-            driver_args += f" -c {config_dir}/libsurvive/config.json"
+            driver_args += f' -c {config_dir}/libsurvive/config.json'
 
     parameters = [
         {'driver_args': driver_args},
