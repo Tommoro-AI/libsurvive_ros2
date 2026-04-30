@@ -128,16 +128,7 @@ There are launch arguments to `libsurvive_ros2.launch.py` to help get up and run
 - `force_recalibrate = boolean (default: false)`: Request a fresh libsurvive calibration run.
 - `velocity_topic = string (default: 'velocity')`: Topic for per-device velocity (`geometry_msgs/TwistStamped`).
 - `battery_topic = string (default: 'battery')`: Topic for per-device battery state (`sensor_msgs/BatteryState`).
-- `enable_world_alignment = boolean (default: true)`: Run helper node that publishes static transform between `world_frame` and `libsurvive_world` from joy button press.
-- `world_frame = string (default: 'world')`: World frame name used by the alignment helper node.
-- `world_align_button_index = int (default: 3)`: Joy button index used as alignment trigger.
 - `occlusion_topic = string (default: 'occlusion')`: Occlusion status topic (`libsurvive_ros2/msg/OcclusionStatus`).
-
-World alignment helper behavior (when `enable_world_alignment:=true`):
-
-- `world` z-axis is kept aligned with `libsurvive_world` z-axis (no roll/pitch correction).
-- Heading is derived from tracker orientation by projecting a tracker-derived direction onto the plane normal to z, then converting that heading to a quaternion (`setRPY(0, 0, yaw)`).
-- This keeps gravity alignment stable while still allowing operator-driven x/y orientation alignment.
 
 Occlusion monitor behavior:
 
@@ -162,11 +153,8 @@ Velocity and battery behavior:
 
 - **The base stations locations are not where I'd expect them to be** -- The calibration phase of libsurvive works out the relative location of the base stations automatically, but the orientation of `libsurvive_world` is not room-aligned by default. In other words, this frame is internally consistent for tracking, but it does not automatically match your real room axes (for example north/forward), and it can vary across runs depending on initialization conditions. To fix this, you should provide your own static transform between your application world frame and `libsurvive_world`.
 
-- **Why does world alignment only adjust heading?** -- By design, the helper keeps `world` z aligned with `libsurvive_world` z and only adjusts yaw from the projected tracker direction. This avoids introducing roll/pitch noise while still letting you align x/y axes to your preferred room heading.
-
 - **When should I override `config_path`?** Pass `config_path:=/path/to/config.json` when you want to use a calibration file that matches your active lighthouse installation and room setup.
 
 - **In need to send extra arguments to the driver** -- Have a look at the `libsurvive_ros2.launch.py` file, and particularly at the `parameters` variable. You should probably be writing your own launch file, and you can include custom modifications for your specific tracking setup by changing the parameters you pass to the driver.
-
 
 

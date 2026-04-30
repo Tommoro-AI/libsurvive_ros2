@@ -18,15 +18,13 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 # THE SOFTWARE.
 
-import os
 from pathlib import Path
-
-from ament_index_python.packages import get_package_share_directory
 
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, OpaqueFunction
-from launch.substitutions import LaunchConfiguration
+from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
 from launch_ros.actions import Node
+from launch_ros.substitutions import FindPackageShare
 
 
 def _clear_existing_config(config_dir):
@@ -38,9 +36,8 @@ def _clear_existing_config(config_dir):
 
 def _launch_setup(context):
     config_dir = LaunchConfiguration('config_dir').perform(context).strip()
-    force_recalibrate = LaunchConfiguration('force_recalibrate').perform(context).strip()
-    world_frame = LaunchConfiguration('world_frame').perform(context).strip()
-
+    force_recalibrate = LaunchConfiguration(
+        'force_recalibrate').perform(context).strip()
     if config_dir:
         _clear_existing_config(config_dir)
 
@@ -73,32 +70,20 @@ def _launch_setup(context):
         additional_env=extra_env,
         parameters=parameters)
 
-    # For recording all data from the experiment
-    world_align_node = Node(
-        package='libsurvive_ros2',
-        executable='libsurvive_world_align_node',
-        name='libsurvive_world_align_node',
-        namespace=LaunchConfiguration('namespace'),
-        output='screen',
-        parameters=[
-            {'world_frame': world_frame},
-            {'joy_topic': 'joy'},
-        ])
-
     return [
         libsurvive_node,
-        world_align_node,
     ]
 
 
 def generate_launch_description():
-    default_config_dir = os.path.join(get_package_share_directory('libsurvive_ros2'), 'config')
+    default_config_dir = PathJoinSubstitution([
+        FindPackageShare('libsurvive_ros2'),
+        'config'
+    ])
 
     arguments = [
         DeclareLaunchArgument('namespace', default_value='libsurvive',
                               description='Namespace for the non-TF topics'),
-        DeclareLaunchArgument('world_frame', default_value='world',
-                              description='World frame name for static alignment transform'),
         DeclareLaunchArgument('force_recalibrate', default_value='false',
                               description='Whether to force a fresh libsurvive calibration'),
         DeclareLaunchArgument('config_dir', default_value=default_config_dir,
