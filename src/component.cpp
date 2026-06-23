@@ -19,10 +19,13 @@
 // THE SOFTWARE.
 
 // C++ system
-#include <algorithm>
+#include <chrono>
+#include <cstdint>
 #include <limits>
 #include <memory>
+#include <sstream>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include <tf2/LinearMath/Quaternion.h>
