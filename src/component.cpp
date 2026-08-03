@@ -153,6 +153,12 @@ Component::Component(const rclcpp::NodeOptions & options)
   this->get_parameter("cfg_topic", cfg_topic);
   cfg_publisher_ = this->create_publisher<diagnostic_msgs::msg::KeyValue>(cfg_topic, 10);
 
+  // Setup topic for pose confidence.
+  this->declare_parameter("confidence_topic", "confidence");
+  this->get_parameter("confidence_topic", confidence_topic_);
+  confidence_publisher_ =
+    this->create_publisher<libsurvive_ros2::msg::PoseConfidence>(confidence_topic_, 10);
+
   // Setup topic for occlusion status.
   this->declare_parameter("occlusion_topic", "occlusion");
   this->get_parameter("occlusion_topic", occlusion_topic_base_);
@@ -318,6 +324,35 @@ void Component::update_occlusion_state(const SurviveSimpleObject * object, FLT p
   }
 }
 
+void Component::update_confidence_state(const SurviveSimpleObject * object, FLT timecode)
+{
+  if (object == nullptr) {
+    return;
+  }
+
+  SurviveObject * so = survive_simple_get_survive_object(object);
+  if (so == nullptr) {
+    return;
+  }
+
+  const auto serial = std::string(survive_simple_serial_number(object));
+  if (serial.empty()) {
+    return;
+  }
+
+  publish_device_confidence(serial, static_cast<float>(so->poseConfidence), timecode);
+}
+
+void Component::publish_device_confidence(
+  const std::string & serial, float confidence, FLT timecode)
+{
+  libsurvive_ros2::msg::PoseConfidence msg;
+  msg.header.stamp = get_ros_time("confidence", timecode);
+  msg.header.frame_id = serial;
+  msg.confidence = confidence;
+  confidence_publisher_->publish(msg);
+}
+
 void Component::publish_device_occlusion(const std::string & serial, bool occluded, FLT timecode)
 {
   libsurvive_ros2::msg::OcclusionStatus msg;
@@ -383,6 +418,8 @@ void Component::work()
               }
 
               publish_device_battery(pose_event->object, pose_msg.header.stamp);
+
+              update_confidence_state(pose_event->object, timecode);
 
               update_occlusion_state(pose_event->object, timecode);
             }

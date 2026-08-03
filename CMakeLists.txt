@@ -67,8 +67,10 @@ find_package(std_msgs REQUIRED)
 find_package(tf2 REQUIRED)
 find_package(tf2_ros REQUIRED)
 
-rosidl_generate_interfaces(${PROJECT_NAME} "msg/OcclusionStatus.msg"
-                           DEPENDENCIES std_msgs)
+rosidl_generate_interfaces(${PROJECT_NAME}
+  "msg/OcclusionStatus.msg"
+  "msg/PoseConfidence.msg"
+  DEPENDENCIES std_msgs)
 
 # Universally add this components includes
 include_directories(include)
