@@ -53,36 +53,39 @@ namespace libsurvive_ros2
 class Component : public rclcpp::Node
 {
 public:
-    explicit Component(const rclcpp::NodeOptions &options);
-    virtual ~Component();
-    rclcpp::Time get_ros_time(const std::string &str, FLT timecode);
-    void publish_imu(const sensor_msgs::msg::Imu &msg);
-    void publish_velocity(const geometry_msgs::msg::TwistStamped &msg);
-    void publish_battery(const sensor_msgs::msg::BatteryState &msg);
-    void publish_device_battery(const SurviveSimpleObject *object, const rclcpp::Time &stamp);
-    void update_occlusion_state(const SurviveSimpleObject *object, FLT pose_timecode);
-    void publish_device_occlusion(const std::string &serial, bool occluded, FLT timecode);
+  explicit Component(const rclcpp::NodeOptions & options);
+  virtual ~Component();
+  void publish_imu(const sensor_msgs::msg::Imu & msg);
+  void publish_velocity(const geometry_msgs::msg::TwistStamped & msg);
+  void publish_battery(const sensor_msgs::msg::BatteryState & msg);
+  void publish_device_battery(
+    const SurviveSimpleObject *object, const rclcpp::Time & stamp);
+  void update_occlusion_state(
+    const SurviveSimpleObject *object, const rclcpp::Time & stamp);
+  void publish_device_occlusion(
+    const std::string & serial, bool occluded, const rclcpp::Time & stamp);
 
 private:
-    void work();
-    SurviveSimpleContext *actx_;
-    std::unique_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster_;
-    std::shared_ptr<tf2_ros::StaticTransformBroadcaster> tf_static_broadcaster_;
-    rclcpp::Publisher<sensor_msgs::msg::Joy>::SharedPtr joy_publisher_;
-    rclcpp::Publisher<sensor_msgs::msg::Imu>::SharedPtr imu_publisher_;
-    rclcpp::Publisher<geometry_msgs::msg::TwistStamped>::SharedPtr velocity_publisher_;
-    rclcpp::Publisher<sensor_msgs::msg::BatteryState>::SharedPtr battery_publisher_;
-    rclcpp::Publisher<libsurvive_ros2::msg::OcclusionStatus>::SharedPtr occlusion_publisher_;
-    rclcpp::Publisher<diagnostic_msgs::msg::KeyValue>::SharedPtr cfg_publisher_;
-    std::thread worker_thread_;
-    rclcpp::Time last_base_station_update_;
-    std::unordered_map<std::string, int64_t> last_battery_publish_ns_by_device_;
-    std::string parent_frame_;
-    std::string occlusion_topic_base_;
-    std::unordered_map<std::string, bool> occlusion_by_device_;
-    std::unordered_map<std::string, int> occlusion_enter_count_by_device_;
-    std::unordered_map<std::string, int> occlusion_exit_count_by_device_;
-    double lighthouse_rate_;
+  void work();
+  SurviveSimpleContext *actx_;
+  std::unique_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster_;
+  std::shared_ptr<tf2_ros::StaticTransformBroadcaster> tf_static_broadcaster_;
+  rclcpp::Publisher<sensor_msgs::msg::Joy>::SharedPtr joy_publisher_;
+  rclcpp::Publisher<sensor_msgs::msg::Imu>::SharedPtr imu_publisher_;
+  rclcpp::Publisher<geometry_msgs::msg::TwistStamped>::SharedPtr velocity_publisher_;
+  rclcpp::Publisher<sensor_msgs::msg::BatteryState>::SharedPtr battery_publisher_;
+  rclcpp::Publisher<libsurvive_ros2::msg::OcclusionStatus>::SharedPtr occlusion_publisher_;
+  rclcpp::Publisher<diagnostic_msgs::msg::KeyValue>::SharedPtr cfg_publisher_;
+  std::thread worker_thread_;
+  rclcpp::Clock steady_clock_{RCL_STEADY_TIME};
+  rclcpp::Time last_base_station_update_{0, 0, RCL_STEADY_TIME};
+  std::unordered_map<std::string, rclcpp::Time> last_battery_publish_by_device_;
+  std::string parent_frame_;
+  std::string occlusion_topic_base_;
+  std::unordered_map<std::string, bool> occlusion_by_device_;
+  std::unordered_map<std::string, int> occlusion_enter_count_by_device_;
+  std::unordered_map<std::string, int> occlusion_exit_count_by_device_;
+  double lighthouse_rate_;
 };
 
-} // namespace libsurvive_ros2
+}  // namespace libsurvive_ros2
