@@ -40,6 +40,7 @@
 #include "libsurvive/survive.h"
 #include "libsurvive/survive_api.h"
 #include "libsurvive_ros2/msg/occlusion_status.hpp"
+#include "libsurvive_ros2/msg/pose_confidence.hpp"
 #include "rclcpp/rclcpp.hpp"
 #include "sensor_msgs/msg/battery_state.hpp"
 #include "sensor_msgs/msg/imu.hpp"
@@ -62,6 +63,10 @@ public:
     const SurviveSimpleObject *object, const rclcpp::Time & stamp);
   void update_occlusion_state(
     const SurviveSimpleObject *object, const rclcpp::Time & stamp);
+  void update_confidence_state(
+    const SurviveSimpleObject * object, const rclcpp::Time & stamp);
+  void publish_device_confidence(
+    const std::string & serial, float confidence, const rclcpp::Time & stamp);
   void publish_device_occlusion(
     const std::string & serial, bool occluded, const rclcpp::Time & stamp);
 
@@ -75,6 +80,7 @@ private:
   rclcpp::Publisher<geometry_msgs::msg::TwistStamped>::SharedPtr velocity_publisher_;
   rclcpp::Publisher<sensor_msgs::msg::BatteryState>::SharedPtr battery_publisher_;
   rclcpp::Publisher<libsurvive_ros2::msg::OcclusionStatus>::SharedPtr occlusion_publisher_;
+  rclcpp::Publisher<libsurvive_ros2::msg::PoseConfidence>::SharedPtr confidence_publisher_;
   rclcpp::Publisher<diagnostic_msgs::msg::KeyValue>::SharedPtr cfg_publisher_;
   std::thread worker_thread_;
   rclcpp::Clock steady_clock_{RCL_STEADY_TIME};
