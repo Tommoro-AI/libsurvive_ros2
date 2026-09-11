@@ -43,7 +43,7 @@ include(FetchContent)
 FetchContent_Declare(
   libsurvive_src
   GIT_REPOSITORY https://github.com/cntools/libsurvive.git
-  GIT_TAG 2f4303c76f53be1919d89d801172fddd7b09aa7a)
+  GIT_TAG f1e6eddb669320f2a30760f4b42936bdb4306da0)
 FetchContent_MakeAvailable(libsurvive_src)
 
 # Keep the pinned upstream covariance fix across clean builds and reconfigure.
