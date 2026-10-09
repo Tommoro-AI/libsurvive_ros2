@@ -46,22 +46,24 @@ FetchContent_Declare(
   GIT_TAG f1e6eddb669320f2a30760f4b42936bdb4306da0)
 FetchContent_MakeAvailable(libsurvive_src)
 
-# Keep the pinned upstream covariance fix across clean builds and reconfigure.
+# Keep upstream fixes across clean builds and reconfigure.
 find_package(Git REQUIRED)
-set(covariance_patch "${CMAKE_CURRENT_SOURCE_DIR}/patches/lighthouse-covariance.patch")
-execute_process(
-  COMMAND ${GIT_EXECUTABLE} apply --reverse --check ${covariance_patch}
-  WORKING_DIRECTORY ${libsurvive_src_SOURCE_DIR}
-  RESULT_VARIABLE patch_applied OUTPUT_QUIET ERROR_QUIET)
-if(NOT patch_applied EQUAL 0)
+foreach(patch_name lighthouse-covariance plugin-deduplication)
+  set(upstream_patch "${CMAKE_CURRENT_SOURCE_DIR}/patches/${patch_name}.patch")
   execute_process(
-    COMMAND ${GIT_EXECUTABLE} apply ${covariance_patch}
+    COMMAND ${GIT_EXECUTABLE} apply --reverse --check ${upstream_patch}
     WORKING_DIRECTORY ${libsurvive_src_SOURCE_DIR}
-    RESULT_VARIABLE patch_result ERROR_VARIABLE patch_error)
-  if(NOT patch_result EQUAL 0)
-    message(FATAL_ERROR "Cannot apply libsurvive covariance fix: ${patch_error}")
+    RESULT_VARIABLE patch_applied OUTPUT_QUIET ERROR_QUIET)
+  if(NOT patch_applied EQUAL 0)
+    execute_process(
+      COMMAND ${GIT_EXECUTABLE} apply ${upstream_patch}
+      WORKING_DIRECTORY ${libsurvive_src_SOURCE_DIR}
+      RESULT_VARIABLE patch_result ERROR_VARIABLE patch_error)
+    if(NOT patch_result EQUAL 0)
+      message(FATAL_ERROR "Cannot apply libsurvive ${patch_name} fix: ${patch_error}")
+    endif()
   endif()
-endif()
+endforeach()
 
 if(TARGET survive)
   set(LIBSURVIVE_TARGET survive)
