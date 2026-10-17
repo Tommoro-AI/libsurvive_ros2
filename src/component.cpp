@@ -26,7 +26,6 @@
 #include <limits>
 #include <memory>
 #include <sstream>
-#include <stdexcept>
 #include <string>
 #include <thread>
 #include <vector>
@@ -45,6 +44,7 @@ constexpr double OCCLUSION_ENTER_TIMEOUT_SEC = 0.2;
 constexpr double OCCLUSION_EXIT_TIMEOUT_SEC = 0.08;
 constexpr int OCCLUSION_ENTER_SAMPLES = 3;
 constexpr int OCCLUSION_EXIT_SAMPLES = 5;
+constexpr auto STATION_LOSS_TIMEOUT = std::chrono::seconds(2);
 
 // We can only ever load one version of the driver, so we store a pointer to the instance of the
 // driver here, so the IMU callback can push data to it.
@@ -170,12 +170,6 @@ Component::Component(const rclcpp::NodeOptions & options)
   occlusion_publisher_ =
     this->create_publisher<libsurvive_ros2::msg::OcclusionStatus>(occlusion_topic_base_, 10);
 
-  expected_lighthouses_ = declare_parameter<int>("expected_lighthouses", 1);
-  if (expected_lighthouses_ < 1 || expected_lighthouses_ > NUM_GEN2_LIGHTHOUSES) {
-    throw std::invalid_argument(
-        "expected_lighthouses must be within libsurvive's station capacity");
-  }
-  calibration_ = TrackingCalibration(expected_lighthouses_);
   ready_publisher_ = create_publisher<std_msgs::msg::Bool>(
     "~/ready", rclcpp::QoS(1).reliable().transient_local());
   ready_timer_ = create_wall_timer(std::chrono::milliseconds(200), [this] {
@@ -350,6 +344,9 @@ void Component::set_ready(bool ready)
 
 bool Component::start_driver(bool fixed_calibration, bool recalibrate)
 {
+  // A new native context must prove optical visibility before becoming ready.
+  station_observations_ = {};
+  calibration_ = TrackingCalibration();
   std::vector<std::string> args{"libsurvive_ros2"};
   std::stringstream input(driver_args_);
   std::string token;
@@ -386,17 +383,33 @@ bool Component::start_driver(bool fixed_calibration, bool recalibrate)
 bool Component::calibration_ready()
 {
   TrackingCalibration::Stations stations;
+  const auto now = TrackingCalibration::Clock::now();
   auto * ctx = survive_simple_get_ctx(actx_);
   survive_get_ctx_lock(ctx);
-  bool complete = ctx->activeLighthouses == expected_lighthouses_;
+  bool complete = true;
   for (int index = 0; index < ctx->activeLighthouses; ++index) {
+    // SDK station entries are cached; only advancing optical counters prove visibility.
+    std::uint64_t samples = 0;
+    for (int object = 0; object < ctx->objs_ct; ++object) {
+      samples += ctx->objs[object]->stats.accepted_data[index];
+    }
+    auto & observation = station_observations_[index];
+    if (samples != observation.samples) {
+      observation.samples = samples;
+      observation.last_seen = now;
+    }
+    if (observation.last_seen == TrackingCalibration::Clock::time_point{} ||
+      now - observation.last_seen >= STATION_LOSS_TIMEOUT)
+    {
+      continue;
+    }
     const auto & station = ctx->bsd[index];
     geometry_msgs::msg::Transform pose;
     if (!station.OOTXSet || !station.PositionSet || !station.BaseStationID ||
       !ros_from_pose(&pose, station.Pose))
     {
       complete = false;
-      break;
+      continue;
     }
     tf2::Quaternion rotation(pose.rotation.x, pose.rotation.y, pose.rotation.z, pose.rotation.w);
     rotation.normalize();
@@ -405,33 +418,7 @@ bool Component::calibration_ready()
   }
   survive_release_ctx_lock(ctx);
   if (!complete) {stations.clear();}
-  const bool ready = calibration_.update(stations, TrackingCalibration::Clock::now());
-  if (ready && !tracking_started_) {
-    // Save this session's calibration and reopen with the global solver disabled.
-    survive_simple_close(actx_);
-    actx_ = nullptr;
-    if (!start_driver(true)) {return false;}
-    tracking_started_ = true;
-    RCLCPP_INFO(get_logger(),
-        "Startup calibration saved; tracking reopened with fixed Lighthouse poses");
-    return false;  // The current event belongs to the closed context.
-  }
-  if (ready != calibration_ready_) {
-    RCLCPP_INFO(get_logger(), "Lighthouse calibration %s (%zu stations)",
-      ready ? "stable; tracker output enabled" : "changed; tracker output suspended",
-        stations.size());
-    set_ready(ready);
-  }
-  if (!ready) {
-    if (tracking_started_) {
-      RCLCPP_WARN_THROTTLE(get_logger(), steady_clock_, 5000,
-        "Fixed Lighthouse layout mismatch; output suspended until STOP and recalibration");
-    } else {
-      RCLCPP_WARN_THROTTLE(get_logger(), steady_clock_, 5000,
-        "Waiting for %d calibrated Lighthouses, stable for 2 seconds", expected_lighthouses_);
-    }
-  }
-  return ready;
+  return calibration_.update(stations, now);
 }
 
 void Component::work()
@@ -448,12 +435,30 @@ void Component::work()
       set_ready(false);
       survive_simple_close(actx_);
       actx_ = nullptr;
-      calibration_ = TrackingCalibration(expected_lighthouses_);
       tracking_started_ = false;
       if (!start_driver(false, true)) {return;}
       RCLCPP_INFO(get_logger(),
           "Recalibrating Lighthouse layout; tracker output remains suspended");
       continue;  // The current event belongs to the closed native context.
+    }
+    const bool ready = calibration_ready();
+    if (ready && !tracking_started_) {
+      survive_simple_close(actx_);
+      actx_ = nullptr;
+      if (!start_driver(true)) {return;}
+      tracking_started_ = true;
+      RCLCPP_INFO(get_logger(),
+          "Calibration saved; waiting for fresh optical input with fixed Lighthouse poses");
+      continue;  // The current event belongs to the closed context.
+    }
+    if (ready != calibration_ready_) {
+      RCLCPP_INFO(get_logger(), "Lighthouse calibration %s",
+        ready ? "stable; tracker output enabled" : "changed; tracker output suspended");
+      set_ready(ready);
+    }
+    if (!ready) {
+      RCLCPP_WARN_THROTTLE(get_logger(), steady_clock_, 5000,
+        "Waiting for visible, calibrated Lighthouses stable for 2 seconds; tracker output suspended");
     }
     // Business logic depends on the event type
     switch (event.event_type) {
@@ -461,15 +466,18 @@ void Component::work()
       case SurviveSimpleEventType_PoseUpdateEvent: {
           const struct SurviveSimplePoseUpdatedEvent * pose_event =
             survive_simple_get_pose_updated_event(&event);
-          const bool ready = calibration_ready();
           if (ready && survive_simple_object_get_type(pose_event->object) !=
             SurviveSimpleObject_LIGHTHOUSE)
           {
+            const auto output_stamp = this->get_clock()->now();
+            update_occlusion_state(pose_event->object, output_stamp);
+            publish_device_battery(pose_event->object, output_stamp);
+            auto * object = survive_simple_get_survive_object(pose_event->object);
+            if (compute_raw_occluded(object, false)) {break;}
             SurvivePose pose = {};
             auto timecode = survive_simple_object_get_latest_pose(pose_event->object, &pose);
             if (timecode > 0) {
               const std::string serial = survive_simple_serial_number(pose_event->object);
-              const auto output_stamp = this->get_clock()->now();
 
               geometry_msgs::msg::TransformStamped pose_msg;
               pose_msg.header.stamp = output_stamp;
@@ -506,9 +514,6 @@ void Component::work()
                 publish_velocity(velocity_msg);
               }
 
-              publish_device_battery(pose_event->object, output_stamp);
-
-              update_occlusion_state(pose_event->object, output_stamp);
             }
           }
           break;

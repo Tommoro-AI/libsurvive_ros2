@@ -21,7 +21,6 @@
 #pragma once
 
 #include <chrono>
-#include <cstddef>
 #include <map>
 
 #include "tf2/LinearMath/Transform.h"
@@ -35,12 +34,9 @@ public:
   using Clock = std::chrono::steady_clock;
   using Stations = std::map<unsigned, tf2::Transform>;
 
-  explicit TrackingCalibration(std::size_t expected_stations = 1)
-  : expected_stations_(expected_stations) {}
-
   bool update(const Stations & stations, Clock::time_point now)
   {
-    bool unchanged = stations.size() == expected_stations_ && stations.size() == baseline_.size();
+    bool unchanged = !stations.empty() && stations.size() == baseline_.size();
     for (const auto & [id, pose] : stations) {
       const auto previous = baseline_.find(id);
       if (previous == baseline_.end() ||
@@ -50,7 +46,11 @@ public:
         unchanged = false;
       }
     }
-    if (frozen_) {return unchanged;}
+    if (frozen_) {
+      // A changed fixed frame stays invalid until a new calibration is requested.
+      if (!unchanged) {baseline_.clear();}
+      return unchanged;
+    }
     if (!unchanged) {
       baseline_ = stations;
       stable_since_ = now;
@@ -60,7 +60,6 @@ public:
   }
 
 private:
-  std::size_t expected_stations_;
   bool frozen_{false};
   Stations baseline_;
   Clock::time_point stable_since_{};

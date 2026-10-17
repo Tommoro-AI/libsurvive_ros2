@@ -27,6 +27,7 @@
 #include <os_generic.h>
 
 // C++ system
+#include <array>
 #include <cstdint>
 #include <atomic>
 #include <memory>
@@ -81,7 +82,12 @@ private:
   std::atomic_bool recalibrate_requested_{false};
   std::mutex readiness_mutex_;
   bool tracking_started_{false};
-  int expected_lighthouses_{1};
+  struct StationObservation
+  {
+    std::uint64_t samples{0};
+    TrackingCalibration::Clock::time_point last_seen{};
+  };
+  std::array<StationObservation, NUM_GEN2_LIGHTHOUSES> station_observations_{};
   std::string driver_args_;
   SurviveSimpleContext *actx_{nullptr};
   std::unique_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster_;
