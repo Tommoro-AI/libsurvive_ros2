@@ -43,6 +43,7 @@ def generate_launch_description():
         output='screen',
         parameters=[{
             'driver_args': driver_args,
+            'tracking_frame': LaunchConfiguration('tracking_frame'),
             'imu_topic': 'imu',
             'joy_topic': 'joy',
             'cfg_topic': 'cfg',
@@ -55,6 +56,8 @@ def generate_launch_description():
     return LaunchDescription([
         DeclareLaunchArgument('namespace', default_value='libsurvive',
                               description='Namespace for the non-TF topics'),
+        DeclareLaunchArgument('tracking_frame', default_value='libsurvive_frame',
+                              description='Parent frame for tracker and Lighthouse transforms'),
         DeclareLaunchArgument('lighthouse_gen', default_value='0',
                               choices=['0', '1', '2'],
                               description='Lighthouse generation: 0=auto, 1=1.0, 2=2.0'),

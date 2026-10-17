@@ -81,7 +81,7 @@ private:
   rclcpp::Clock steady_clock_{RCL_STEADY_TIME};
   rclcpp::Time last_base_station_update_{0, 0, RCL_STEADY_TIME};
   std::unordered_map<std::string, rclcpp::Time> last_battery_publish_by_device_;
-  std::string parent_frame_;
+  std::string tracking_frame_;
   std::string occlusion_topic_base_;
   std::unordered_map<std::string, bool> occlusion_by_device_;
   std::unordered_map<std::string, int> occlusion_enter_count_by_device_;

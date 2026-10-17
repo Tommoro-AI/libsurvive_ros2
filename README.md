@@ -122,6 +122,7 @@ $ ros2 launch libsurvive_ros2 libsurvive_ros2.launch.py
 There are launch arguments to `libsurvive_ros2.launch.py` to help get up and running:
 
 - `namespace = string (default: 'libsurvive')` : This is the namespace on which to add the extra topics for sensor data.
+- `tracking_frame = string (default: 'libsurvive_frame')`: Parent frame for tracker and Lighthouse transforms.
 - `force_recalibrate = boolean (default: false)`: Recompute the stored Lighthouse poses at startup. Use this after moving the Lighthouses or changing the tracking environment.
 
 Occlusion monitor behavior:
