@@ -21,10 +21,12 @@
 
 // C++ system
 #include <chrono>
+#include <cmath>
 #include <cstdint>
 #include <limits>
 #include <memory>
 #include <sstream>
+#include <stdexcept>
 #include <string>
 #include <thread>
 #include <vector>
@@ -66,9 +68,16 @@ static void imu_func(
   }
 }
 
-static void ros_from_pose(
+static bool ros_from_pose(
   geometry_msgs::msg::Transform * const tx, const SurvivePose & pose)
 {
+  const tf2::Quaternion rotation(pose.Rot[1], pose.Rot[2], pose.Rot[3], pose.Rot[0]);
+  if (!std::isfinite(pose.Pos[0]) || !std::isfinite(pose.Pos[1]) ||
+    !std::isfinite(pose.Pos[2]) || !std::isfinite(rotation.length2()) ||
+    rotation.length2() < 1e-12)
+  {
+    return false;
+  }
   tx->translation.x = pose.Pos[0];
   tx->translation.y = pose.Pos[1];
   tx->translation.z = pose.Pos[2];
@@ -76,6 +85,7 @@ static void ros_from_pose(
   tx->rotation.x = pose.Rot[1];
   tx->rotation.y = pose.Rot[2];
   tx->rotation.z = pose.Rot[3];
+  return true;
 }
 
 static tf2::Quaternion body_from_world_quaternion(const SurvivePose & pose)
@@ -160,35 +170,35 @@ Component::Component(const rclcpp::NodeOptions & options)
   occlusion_publisher_ =
     this->create_publisher<libsurvive_ros2::msg::OcclusionStatus>(occlusion_topic_base_, 10);
 
-  // Setup driver parameters.
-  std::string driver_args;
-  this->declare_parameter("driver_args", "--disable-calibrate");
-  this->get_parameter("driver_args", driver_args);
-  std::vector<std::string> args{"libsurvive_ros2"};
-  std::stringstream driver_ss(driver_args);
-  std::string token;
-  while (driver_ss >> token) {
-    args.emplace_back(token);
+  expected_lighthouses_ = declare_parameter<int>("expected_lighthouses", 1);
+  if (expected_lighthouses_ < 1 || expected_lighthouses_ > NUM_GEN2_LIGHTHOUSES) {
+    throw std::invalid_argument(
+        "expected_lighthouses must be within libsurvive's station capacity");
   }
-  std::vector<char *> arg_ptrs;
-  arg_ptrs.reserve(args.size());
-  for (auto & arg : args) {
-    arg_ptrs.emplace_back(arg.data());
-  }
-
-  // Try and initialize survive with the arguments supplied.
-  actx_ = survive_simple_init(static_cast<int>(arg_ptrs.size()), arg_ptrs.data());
-  if (actx_ == nullptr) {
-    RCLCPP_FATAL(this->get_logger(), "Could not initialize the libsurvive context");
-    return;
-  }
-
-  // Setup callback for reading IMU data.
-  SurviveContext * ctx = survive_simple_get_ctx(actx_);
-  survive_install_imu_fn(ctx, imu_func);
-
-  // Initialize the survive thread.
-  survive_simple_start_thread(actx_);
+  calibration_ = TrackingCalibration(expected_lighthouses_);
+  ready_publisher_ = create_publisher<std_msgs::msg::Bool>(
+    "~/ready", rclcpp::QoS(1).reliable().transient_local());
+  ready_timer_ = create_wall_timer(std::chrono::milliseconds(200), [this] {
+        std::lock_guard<std::mutex> lock(readiness_mutex_);
+        ready_publisher_->publish(std_msgs::msg::Bool().set__data(calibration_ready_.load()));
+    });
+  ready_publisher_->publish(std_msgs::msg::Bool().set__data(false));
+  recalibrate_service_ = create_service<std_srvs::srv::Trigger>("~/recalibrate",
+      [this](const std_srvs::srv::Trigger::Request::SharedPtr,
+      std_srvs::srv::Trigger::Response::SharedPtr response) {
+        response->success = !calibration_ready_.load();
+        if (response->success) {
+          recalibrate_requested_ = true;
+          response->message = "Recalibration requested; wait for ready before resuming";
+        } else {
+          response->message =
+          "Tracking is ready; STOP and invalidate tracking before recalibrating";
+        }
+    });
+  driver_args_ = declare_parameter<std::string>("driver_args", "--disable-calibrate 0");
+  if (!start_driver(false)) {return;}
+  tracking_started_ = survive_configi(
+    survive_simple_get_ctx(actx_), "disable-calibrate", SC_GET, 0) != 0;
 
   // Start the work thread
   worker_thread_ = std::thread(&Component::work, this);
@@ -197,7 +207,7 @@ Component::Component(const rclcpp::NodeOptions & options)
 Component::~Component()
 {
   RCLCPP_INFO(this->get_logger(), "Cleaning up.");
-  worker_thread_.join();
+  if (worker_thread_.joinable()) {worker_thread_.join();}
 
   RCLCPP_INFO(this->get_logger(), "Shutting down libsurvive driver");
   if (actx_) {
@@ -330,23 +340,129 @@ void Component::publish_device_occlusion(
   occlusion_publisher_->publish(msg);
 }
 
+void Component::set_ready(bool ready)
+{
+  // Serialize heartbeat and worker publications so an old true cannot follow a new false.
+  std::lock_guard<std::mutex> lock(readiness_mutex_);
+  calibration_ready_ = ready;
+  ready_publisher_->publish(std_msgs::msg::Bool().set__data(ready));
+}
+
+bool Component::start_driver(bool fixed_calibration, bool recalibrate)
+{
+  std::vector<std::string> args{"libsurvive_ros2"};
+  std::stringstream input(driver_args_);
+  std::string token;
+  while (input >> token) {args.push_back(token);}
+  if (fixed_calibration || recalibrate) {
+    for (std::size_t i = 1; i < args.size(); ) {
+      if (args[i] == "--force-calibrate" || args[i] == "--disable-calibrate") {
+        args.erase(args.begin() + i);
+        if (i < args.size() && (args[i] == "0" || args[i] == "1")) {
+          args.erase(args.begin() + i);
+        }
+      } else {
+        ++i;
+      }
+    }
+    args.insert(args.end(), {"--force-calibrate", fixed_calibration ? "0" : "1",
+        "--disable-calibrate", fixed_calibration ? "1" : "0"});
+  }
+  std::vector<char *> argv;
+  for (auto & arg : args) {
+    argv.push_back(arg.data());
+  }
+  actx_ = survive_simple_init(static_cast<int>(argv.size()), argv.data());
+  if (!actx_) {
+    RCLCPP_FATAL(get_logger(), "Could not initialize the libsurvive context");
+    rclcpp::shutdown();
+    return false;
+  }
+  survive_install_imu_fn(survive_simple_get_ctx(actx_), imu_func);
+  survive_simple_start_thread(actx_);
+  return true;
+}
+
+bool Component::calibration_ready()
+{
+  TrackingCalibration::Stations stations;
+  auto * ctx = survive_simple_get_ctx(actx_);
+  survive_get_ctx_lock(ctx);
+  bool complete = ctx->activeLighthouses == expected_lighthouses_;
+  for (int index = 0; index < ctx->activeLighthouses; ++index) {
+    const auto & station = ctx->bsd[index];
+    geometry_msgs::msg::Transform pose;
+    if (!station.OOTXSet || !station.PositionSet || !station.BaseStationID ||
+      !ros_from_pose(&pose, station.Pose))
+    {
+      complete = false;
+      break;
+    }
+    tf2::Quaternion rotation(pose.rotation.x, pose.rotation.y, pose.rotation.z, pose.rotation.w);
+    rotation.normalize();
+    stations.emplace(station.BaseStationID, tf2::Transform(
+        rotation, tf2::Vector3(pose.translation.x, pose.translation.y, pose.translation.z)));
+  }
+  survive_release_ctx_lock(ctx);
+  if (!complete) {stations.clear();}
+  const bool ready = calibration_.update(stations, TrackingCalibration::Clock::now());
+  if (ready && !tracking_started_) {
+    // Save this session's calibration and reopen with the global solver disabled.
+    survive_simple_close(actx_);
+    actx_ = nullptr;
+    if (!start_driver(true)) {return false;}
+    tracking_started_ = true;
+    RCLCPP_INFO(get_logger(),
+        "Startup calibration saved; tracking reopened with fixed Lighthouse poses");
+    return false;  // The current event belongs to the closed context.
+  }
+  if (ready != calibration_ready_) {
+    RCLCPP_INFO(get_logger(), "Lighthouse calibration %s (%zu stations)",
+      ready ? "stable; tracker output enabled" : "changed; tracker output suspended",
+        stations.size());
+    set_ready(ready);
+  }
+  if (!ready) {
+    if (tracking_started_) {
+      RCLCPP_WARN_THROTTLE(get_logger(), steady_clock_, 5000,
+        "Fixed Lighthouse layout mismatch; output suspended until STOP and recalibration");
+    } else {
+      RCLCPP_WARN_THROTTLE(get_logger(), steady_clock_, 5000,
+        "Waiting for %d calibrated Lighthouses, stable for 2 seconds", expected_lighthouses_);
+    }
+  }
+  return ready;
+}
+
 void Component::work()
 {
   RCLCPP_INFO(this->get_logger(), "Start listening for events..");
 
   // Poll for events.
   struct SurviveSimpleEvent event = {};
-  while (survive_simple_wait_for_event(
+  while (rclcpp::ok() && actx_ && survive_simple_wait_for_event(
       actx_,
-      &event) != SurviveSimpleEventType_Shutdown && rclcpp::ok())
+      &event) != SurviveSimpleEventType_Shutdown)
   {
+    if (recalibrate_requested_.exchange(false) && tracking_started_) {
+      set_ready(false);
+      survive_simple_close(actx_);
+      actx_ = nullptr;
+      calibration_ = TrackingCalibration(expected_lighthouses_);
+      tracking_started_ = false;
+      if (!start_driver(false, true)) {return;}
+      RCLCPP_INFO(get_logger(),
+          "Recalibrating Lighthouse layout; tracker output remains suspended");
+      continue;  // The current event belongs to the closed native context.
+    }
     // Business logic depends on the event type
     switch (event.event_type) {
       // TYPE: Pose update (limit to non-lighthouses only)
       case SurviveSimpleEventType_PoseUpdateEvent: {
           const struct SurviveSimplePoseUpdatedEvent * pose_event =
             survive_simple_get_pose_updated_event(&event);
-          if (survive_simple_object_get_type(pose_event->object) !=
+          const bool ready = calibration_ready();
+          if (ready && survive_simple_object_get_type(pose_event->object) !=
             SurviveSimpleObject_LIGHTHOUSE)
           {
             SurvivePose pose = {};
@@ -359,7 +475,11 @@ void Component::work()
               pose_msg.header.stamp = output_stamp;
               pose_msg.header.frame_id = tracking_frame_;
               pose_msg.child_frame_id = serial;
-              ros_from_pose(&pose_msg.transform, pose);
+              if (!ros_from_pose(&pose_msg.transform, pose)) {
+                RCLCPP_WARN_THROTTLE(
+                  get_logger(), steady_clock_, 5000, "Invalid tracker pose: %s", serial.c_str());
+                break;
+              }
               tf_broadcaster_->sendTransform(pose_msg);
 
               SurviveVelocity velocity = {};
@@ -451,6 +571,8 @@ void Component::work()
         break;
     }
 
+    if (!actx_) {break;}
+
     // Always update the base stations
     const auto publication_time = steady_clock_.now();
     if (publication_time - last_base_station_update_ >=
@@ -469,13 +591,16 @@ void Component::work()
             pose_msg.header.stamp = output_stamp;
             pose_msg.header.frame_id = tracking_frame_;
             pose_msg.child_frame_id = survive_simple_serial_number(it);
-            ros_from_pose(&pose_msg.transform, pose);
+            if (!ros_from_pose(&pose_msg.transform, pose)) {
+              continue;
+            }
             tf_static_broadcaster_->sendTransform(pose_msg);
           }
         }
       }
     }
   }
+  if (rclcpp::ok()) {set_ready(false);}
 }
 
 }  // namespace libsurvive_ros2

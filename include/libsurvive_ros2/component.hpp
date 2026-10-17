@@ -28,7 +28,9 @@
 
 // C++ system
 #include <cstdint>
+#include <atomic>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <thread>
 #include <unordered_map>
@@ -41,10 +43,13 @@
 #include "libsurvive/survive.h"
 #include "libsurvive/survive_api.h"
 #include "libsurvive_ros2/msg/occlusion_status.hpp"
+#include "libsurvive_ros2/tracking_calibration.hpp"
 #include "rclcpp/rclcpp.hpp"
 #include "sensor_msgs/msg/battery_state.hpp"
 #include "sensor_msgs/msg/imu.hpp"
 #include "sensor_msgs/msg/joy.hpp"
+#include "std_msgs/msg/bool.hpp"
+#include "std_srvs/srv/trigger.hpp"
 #include "tf2_ros/static_transform_broadcaster.h"
 #include "tf2_ros/transform_broadcaster.h"
 
@@ -68,7 +73,17 @@ public:
 
 private:
   void work();
-  SurviveSimpleContext *actx_;
+  bool calibration_ready();
+  bool start_driver(bool fixed_calibration, bool recalibrate = false);
+  void set_ready(bool ready);
+  TrackingCalibration calibration_;
+  std::atomic_bool calibration_ready_{false};
+  std::atomic_bool recalibrate_requested_{false};
+  std::mutex readiness_mutex_;
+  bool tracking_started_{false};
+  int expected_lighthouses_{1};
+  std::string driver_args_;
+  SurviveSimpleContext *actx_{nullptr};
   std::unique_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster_;
   std::shared_ptr<tf2_ros::StaticTransformBroadcaster> tf_static_broadcaster_;
   rclcpp::Publisher<sensor_msgs::msg::Joy>::SharedPtr joy_publisher_;
@@ -77,6 +92,9 @@ private:
   rclcpp::Publisher<sensor_msgs::msg::BatteryState>::SharedPtr battery_publisher_;
   rclcpp::Publisher<libsurvive_ros2::msg::OcclusionStatus>::SharedPtr occlusion_publisher_;
   rclcpp::Publisher<diagnostic_msgs::msg::KeyValue>::SharedPtr cfg_publisher_;
+  rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr ready_publisher_;
+  rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr recalibrate_service_;
+  rclcpp::TimerBase::SharedPtr ready_timer_;
   std::thread worker_thread_;
   rclcpp::Clock steady_clock_{RCL_STEADY_TIME};
   rclcpp::Time last_base_station_update_{0, 0, RCL_STEADY_TIME};

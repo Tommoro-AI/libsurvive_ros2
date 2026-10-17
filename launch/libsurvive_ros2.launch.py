@@ -60,6 +60,8 @@ def start_driver(context):
         parameters=[{
             'driver_args': driver_args,
             'tracking_frame': LaunchConfiguration('tracking_frame'),
+            'expected_lighthouses': ParameterValue(
+                LaunchConfiguration('expected_lighthouses'), value_type=int),
             'imu_topic': 'imu',
             'joy_topic': 'joy',
             'cfg_topic': 'cfg',
@@ -85,6 +87,9 @@ def generate_launch_description():
         DeclareLaunchArgument('lighthouse_gen', default_value='0',
                               choices=['0', '1', '2'],
                               description='Lighthouse generation: 0=auto, 1=1.0, 2=2.0'),
+        DeclareLaunchArgument('expected_lighthouses', default_value='1',
+                              description='Number of stations required before startup '
+                                          'calibration is fixed'),
         DeclareLaunchArgument('force_recalibrate', default_value='true',
                               choices=['true', 'false'],
                               description='Recompute Lighthouse poses at startup'),

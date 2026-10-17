@@ -123,6 +123,7 @@ There are launch arguments to `libsurvive_ros2.launch.py` to help get up and run
 
 - `namespace = string (default: 'libsurvive')` : This is the namespace on which to add the extra topics for sensor data.
 - `tracking_frame = string (default: 'libsurvive_frame')`: Parent frame for tracker and Lighthouse transforms.
+- `expected_lighthouses = integer (default: 1)`: Require exactly this many calibrated stations before enabling tracker output. Set 2 for a two-station installation.
 - `force_recalibrate = boolean (default: true)`: Recompute Lighthouse poses at startup. Keep trackers stationary and visible during initialization; use false only for an unchanged installation.
 
 Occlusion monitor behavior:
@@ -148,4 +149,6 @@ Velocity and battery behavior:
 
 - **The base stations locations are not where I'd expect them to be** -- The calibration phase of libsurvive works out the relative location of the base stations automatically, but the orientation of `libsurvive_world` is not map-aligned by default. Applications that require `map` should provide their own `map -> libsurvive_world` transform.
 
-- Startup uses a temporary native configuration to discover and recalibrate the current Lighthouse installation. `force_recalibrate:=false` reuses the saved configuration for an unchanged installation.
+- Startup uses a temporary native configuration and fixes the Lighthouse poses after the expected stations remain stable for 2 seconds. `force_recalibrate:=false` reuses the saved configuration for an unchanged installation.
+- `~/ready` (`std_msgs/Bool`, reliable, transient-local, 200 ms heartbeat) reports calibration validity. `~/recalibrate` (`std_srvs/Trigger`) requests calibration while tracking is invalid. Consumers must stop motion before requesting recalibration and explicitly resume after readiness returns.
+- Tracker poses are published without smoothing. Consumers handle filtering and stale or discontinuous input. Physical station movement may not be detected from cached poses; recalibration can change the world frame and requires updating external alignment.

@@ -84,6 +84,7 @@ find_package(diagnostic_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(std_msgs REQUIRED)
+find_package(std_srvs REQUIRED)
 find_package(tf2 REQUIRED)
 find_package(tf2_ros REQUIRED)
 
@@ -110,6 +111,7 @@ ament_target_dependencies(
   geometry_msgs
   sensor_msgs
   std_msgs
+  std_srvs
   tf2
   tf2_ros)
 rosidl_get_typesupport_target(cpp_typesupport_target ${PROJECT_NAME}
