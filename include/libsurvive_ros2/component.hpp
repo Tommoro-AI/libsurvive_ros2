@@ -86,6 +86,7 @@ private:
   {
     std::uint64_t samples{0};
     TrackingCalibration::Clock::time_point last_seen{};
+    std::array<FLT, 3> up_direction{};
   };
   std::array<StationObservation, NUM_GEN2_LIGHTHOUSES> station_observations_{};
   std::string driver_args_;

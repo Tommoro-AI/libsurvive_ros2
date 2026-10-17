@@ -365,6 +365,8 @@ bool Component::start_driver(bool fixed_calibration, bool recalibrate)
     args.insert(args.end(), {"--force-calibrate", fixed_calibration ? "0" : "1",
         "--disable-calibrate", fixed_calibration ? "1" : "0"});
   }
+  // Cached OOTX must not make a new context ready before receiving a fresh packet.
+  args.insert(args.end(), {"--force-ootx", "1"});
   std::vector<char *> argv;
   for (auto & arg : args) {
     argv.push_back(arg.data());
@@ -411,6 +413,18 @@ bool Component::calibration_ready()
       complete = false;
       continue;
     }
+    const std::array<FLT, 3> up_direction{
+      station.accel[0], station.accel[1], station.accel[2]};
+    // OOTX can change while the SDK restores the same reference-station pose.
+    if (observation.up_direction != up_direction) {
+      complete = false;
+      if (calibration_ready_) {
+        RCLCPP_WARN(get_logger(),
+          "Lighthouse %08x OOTX up direction changed; calibration invalidated",
+          static_cast<unsigned>(station.BaseStationID));
+      }
+    }
+    observation.up_direction = up_direction;
     tf2::Quaternion rotation(pose.rotation.x, pose.rotation.y, pose.rotation.z, pose.rotation.w);
     rotation.normalize();
     stations.emplace(station.BaseStationID, tf2::Transform(
