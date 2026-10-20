@@ -176,7 +176,7 @@ Component::Component(const rclcpp::NodeOptions & options)
     "~/calibration_valid", rclcpp::QoS(1).reliable().transient_local());
   ready_timer_ = create_wall_timer(std::chrono::milliseconds(200), [this] {
         std::lock_guard<std::mutex> lock(readiness_mutex_);
-        ready_publisher_->publish(std_msgs::msg::Bool().set__data(calibration_ready_.load()));
+        ready_publisher_->publish(std_msgs::msg::Bool().set__data(tracking_ready_.load()));
         calibration_publisher_->publish(std_msgs::msg::Bool().set__data(calibration_valid_.load()));
     });
   ready_publisher_->publish(std_msgs::msg::Bool().set__data(false));
@@ -342,7 +342,7 @@ void Component::set_ready(bool ready)
 {
   // Serialize heartbeat and worker publications so an old true cannot follow a new false.
   std::lock_guard<std::mutex> lock(readiness_mutex_);
-  calibration_ready_ = ready;
+  tracking_ready_ = ready;
   calibration_valid_ = calibration_.valid();
   calibration_publisher_->publish(std_msgs::msg::Bool().set__data(calibration_valid_.load()));
   ready_publisher_->publish(std_msgs::msg::Bool().set__data(ready));
@@ -388,7 +388,7 @@ bool Component::start_driver(bool fixed_calibration, bool recalibrate)
   return true;
 }
 
-bool Component::calibration_ready()
+bool Component::tracking_ready()
 {
   TrackingCalibration::Stations stations;
   const auto now = TrackingCalibration::Clock::now();
@@ -426,7 +426,7 @@ bool Component::calibration_ready()
     if (observation.up_direction != up_direction) {
       complete = false;
       if (calibration_.valid()) {calibration_.invalidate();}
-      if (calibration_ready_) {
+      if (tracking_ready_) {
         RCLCPP_WARN(get_logger(),
           "Lighthouse %08x OOTX up direction changed; calibration invalidated",
           static_cast<unsigned>(station.BaseStationID));
@@ -463,7 +463,7 @@ void Component::work()
           "Recalibrating Lighthouse layout; tracker output remains suspended");
       continue;  // The current event belongs to the closed native context.
     }
-    const bool ready = calibration_ready();
+    const bool ready = tracking_ready();
     if (ready && !tracking_started_) {
       survive_simple_close(actx_);
       actx_ = nullptr;
@@ -473,7 +473,7 @@ void Component::work()
           "Calibration saved; waiting for fresh optical input with fixed Lighthouse poses");
       continue;  // The current event belongs to the closed context.
     }
-    if (ready != calibration_ready_ || calibration_.valid() != calibration_valid_) {
+    if (ready != tracking_ready_ || calibration_.valid() != calibration_valid_) {
       RCLCPP_INFO(get_logger(), "%s",
         ready ? "Tracking ready; calibrated tracker output enabled" :
         calibration_.valid() ? "Tracking occluded; calibration retained, tracker output suspended" :
@@ -482,7 +482,7 @@ void Component::work()
     }
     if (!ready) {
       RCLCPP_WARN_THROTTLE(get_logger(), steady_clock_, 5000,
-        "Waiting for visible, calibrated Lighthouses stable for 2 seconds; tracker output suspended");
+        "Tracking unavailable; tracker output suspended");
     }
     // Business logic depends on the event type
     switch (event.event_type) {

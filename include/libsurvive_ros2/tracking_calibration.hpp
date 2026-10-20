@@ -41,17 +41,22 @@ public:
 
   bool update(const Stations & stations, Clock::time_point now)
   {
+    if (frozen_ && !valid()) {return false;}
+    bool poses_match = true;
+    for (const auto & [id, pose] : stations) {
+      const auto previous = baseline_.find(id);
+      if (previous == baseline_.end() ||
+        pose.getOrigin().distance(previous->second.getOrigin()) > 0.01 ||
+        pose.getRotation().angleShortestPath(previous->second.getRotation()) > 0.01745329252)
+      {
+        poses_match = false;
+        break;
+      }
+    }
     if (frozen_) {
-      if (!valid()) {return false;}
-      for (const auto & [id, pose] : stations) {
-        const auto previous = baseline_.find(id);
-        if (previous == baseline_.end() ||
-          pose.getOrigin().distance(previous->second.getOrigin()) > 0.01 ||
-          pose.getRotation().angleShortestPath(previous->second.getRotation()) > 0.01745329252)
-        {
-          invalidate();
-          return false;
-        }
+      if (!poses_match) {
+        invalidate();
+        return false;
       }
       if (!missing_since_ && stations.size() != baseline_.size()) {missing_since_ = now;}
       if (missing_since_ && now - *missing_since_ >= std::chrono::seconds(5)) {
@@ -62,16 +67,7 @@ public:
       missing_since_.reset();
       return true;
     }
-    bool unchanged = !stations.empty() && stations.size() == baseline_.size();
-    for (const auto & [id, pose] : stations) {
-      const auto previous = baseline_.find(id);
-      if (previous == baseline_.end() ||
-        pose.getOrigin().distance(previous->second.getOrigin()) > 0.01 ||
-        pose.getRotation().angleShortestPath(previous->second.getRotation()) > 0.01745329252)
-      {
-        unchanged = false;
-      }
-    }
+    const bool unchanged = poses_match && !stations.empty() && stations.size() == baseline_.size();
     if (!unchanged) {
       baseline_ = stations;
       stable_since_ = now;

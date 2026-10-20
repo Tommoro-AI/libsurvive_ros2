@@ -74,11 +74,11 @@ public:
 
 private:
   void work();
-  bool calibration_ready();
+  bool tracking_ready();
   bool start_driver(bool fixed_calibration, bool recalibrate = false);
   void set_ready(bool ready);
   TrackingCalibration calibration_;
-  std::atomic_bool calibration_ready_{false};
+  std::atomic_bool tracking_ready_{false};
   std::atomic_bool calibration_valid_{false};
   std::atomic_bool recalibrate_requested_{false};
   std::mutex readiness_mutex_;
