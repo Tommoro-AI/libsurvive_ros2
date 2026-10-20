@@ -22,20 +22,46 @@
 
 #include <chrono>
 #include <map>
+#include <optional>
 
 #include "tf2/LinearMath/Transform.h"
 
 namespace libsurvive_ros2
 {
-// Only observed, calibrated stations belong in a snapshot; an incomplete snapshot is empty.
+// Snapshots contain only recently observed, calibrated stations.
 class TrackingCalibration
 {
 public:
   using Clock = std::chrono::steady_clock;
   using Stations = std::map<unsigned, tf2::Transform>;
 
+  bool valid() const {return frozen_ && !baseline_.empty();}
+
+  void invalidate() {baseline_.clear();}
+
   bool update(const Stations & stations, Clock::time_point now)
   {
+    if (frozen_) {
+      if (!valid()) {return false;}
+      for (const auto & [id, pose] : stations) {
+        const auto previous = baseline_.find(id);
+        if (previous == baseline_.end() ||
+          pose.getOrigin().distance(previous->second.getOrigin()) > 0.01 ||
+          pose.getRotation().angleShortestPath(previous->second.getRotation()) > 0.01745329252)
+        {
+          invalidate();
+          return false;
+        }
+      }
+      if (!missing_since_ && stations.size() != baseline_.size()) {missing_since_ = now;}
+      if (missing_since_ && now - *missing_since_ >= std::chrono::seconds(5)) {
+        invalidate();
+        return false;
+      }
+      if (stations.size() != baseline_.size()) {return false;}
+      missing_since_.reset();
+      return true;
+    }
     bool unchanged = !stations.empty() && stations.size() == baseline_.size();
     for (const auto & [id, pose] : stations) {
       const auto previous = baseline_.find(id);
@@ -45,11 +71,6 @@ public:
       {
         unchanged = false;
       }
-    }
-    if (frozen_) {
-      // A changed fixed frame stays invalid until a new calibration is requested.
-      if (!unchanged) {baseline_.clear();}
-      return unchanged;
     }
     if (!unchanged) {
       baseline_ = stations;
@@ -63,5 +84,6 @@ private:
   bool frozen_{false};
   Stations baseline_;
   Clock::time_point stable_since_{};
+  std::optional<Clock::time_point> missing_since_;
 };
 }  // namespace libsurvive_ros2

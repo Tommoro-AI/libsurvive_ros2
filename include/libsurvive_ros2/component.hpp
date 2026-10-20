@@ -79,6 +79,7 @@ private:
   void set_ready(bool ready);
   TrackingCalibration calibration_;
   std::atomic_bool calibration_ready_{false};
+  std::atomic_bool calibration_valid_{false};
   std::atomic_bool recalibrate_requested_{false};
   std::mutex readiness_mutex_;
   bool tracking_started_{false};
@@ -100,6 +101,7 @@ private:
   rclcpp::Publisher<libsurvive_ros2::msg::OcclusionStatus>::SharedPtr occlusion_publisher_;
   rclcpp::Publisher<diagnostic_msgs::msg::KeyValue>::SharedPtr cfg_publisher_;
   rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr ready_publisher_;
+  rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr calibration_publisher_;
   rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr recalibrate_service_;
   rclcpp::TimerBase::SharedPtr ready_timer_;
   std::thread worker_thread_;

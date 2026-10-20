@@ -44,7 +44,7 @@ constexpr double OCCLUSION_ENTER_TIMEOUT_SEC = 0.2;
 constexpr double OCCLUSION_EXIT_TIMEOUT_SEC = 0.08;
 constexpr int OCCLUSION_ENTER_SAMPLES = 3;
 constexpr int OCCLUSION_EXIT_SAMPLES = 5;
-constexpr auto STATION_LOSS_TIMEOUT = std::chrono::seconds(2);
+constexpr auto STATION_OBSERVATION_TIMEOUT = std::chrono::milliseconds(200);
 
 // We can only ever load one version of the driver, so we store a pointer to the instance of the
 // driver here, so the IMU callback can push data to it.
@@ -172,21 +172,25 @@ Component::Component(const rclcpp::NodeOptions & options)
 
   ready_publisher_ = create_publisher<std_msgs::msg::Bool>(
     "~/ready", rclcpp::QoS(1).reliable().transient_local());
+  calibration_publisher_ = create_publisher<std_msgs::msg::Bool>(
+    "~/calibration_valid", rclcpp::QoS(1).reliable().transient_local());
   ready_timer_ = create_wall_timer(std::chrono::milliseconds(200), [this] {
         std::lock_guard<std::mutex> lock(readiness_mutex_);
         ready_publisher_->publish(std_msgs::msg::Bool().set__data(calibration_ready_.load()));
+        calibration_publisher_->publish(std_msgs::msg::Bool().set__data(calibration_valid_.load()));
     });
   ready_publisher_->publish(std_msgs::msg::Bool().set__data(false));
+  calibration_publisher_->publish(std_msgs::msg::Bool().set__data(false));
   recalibrate_service_ = create_service<std_srvs::srv::Trigger>("~/recalibrate",
       [this](const std_srvs::srv::Trigger::Request::SharedPtr,
       std_srvs::srv::Trigger::Response::SharedPtr response) {
-        response->success = !calibration_ready_.load();
+        response->success = !calibration_valid_.load();
         if (response->success) {
           recalibrate_requested_ = true;
           response->message = "Recalibration requested; wait for ready before resuming";
         } else {
           response->message =
-          "Tracking is ready; STOP and invalidate tracking before recalibrating";
+          "Calibration is retained; wait for optical input instead of recalibrating";
         }
     });
   driver_args_ = declare_parameter<std::string>("driver_args", "--disable-calibrate 0");
@@ -339,6 +343,8 @@ void Component::set_ready(bool ready)
   // Serialize heartbeat and worker publications so an old true cannot follow a new false.
   std::lock_guard<std::mutex> lock(readiness_mutex_);
   calibration_ready_ = ready;
+  calibration_valid_ = calibration_.valid();
+  calibration_publisher_->publish(std_msgs::msg::Bool().set__data(calibration_valid_.load()));
   ready_publisher_->publish(std_msgs::msg::Bool().set__data(ready));
 }
 
@@ -401,7 +407,7 @@ bool Component::calibration_ready()
       observation.last_seen = now;
     }
     if (observation.last_seen == TrackingCalibration::Clock::time_point{} ||
-      now - observation.last_seen >= STATION_LOSS_TIMEOUT)
+      now - observation.last_seen >= STATION_OBSERVATION_TIMEOUT)
     {
       continue;
     }
@@ -410,6 +416,7 @@ bool Component::calibration_ready()
     if (!station.OOTXSet || !station.PositionSet || !station.BaseStationID ||
       !ros_from_pose(&pose, station.Pose))
     {
+      if (calibration_.valid()) {calibration_.invalidate();}
       complete = false;
       continue;
     }
@@ -418,6 +425,7 @@ bool Component::calibration_ready()
     // OOTX can change while the SDK restores the same reference-station pose.
     if (observation.up_direction != up_direction) {
       complete = false;
+      if (calibration_.valid()) {calibration_.invalidate();}
       if (calibration_ready_) {
         RCLCPP_WARN(get_logger(),
           "Lighthouse %08x OOTX up direction changed; calibration invalidated",
@@ -445,7 +453,7 @@ void Component::work()
       actx_,
       &event) != SurviveSimpleEventType_Shutdown)
   {
-    if (recalibrate_requested_.exchange(false) && tracking_started_) {
+    if (recalibrate_requested_.exchange(false)) {
       set_ready(false);
       survive_simple_close(actx_);
       actx_ = nullptr;
@@ -465,9 +473,11 @@ void Component::work()
           "Calibration saved; waiting for fresh optical input with fixed Lighthouse poses");
       continue;  // The current event belongs to the closed context.
     }
-    if (ready != calibration_ready_) {
-      RCLCPP_INFO(get_logger(), "Lighthouse calibration %s",
-        ready ? "stable; tracker output enabled" : "changed; tracker output suspended");
+    if (ready != calibration_ready_ || calibration_.valid() != calibration_valid_) {
+      RCLCPP_INFO(get_logger(), "%s",
+        ready ? "Tracking ready; calibrated tracker output enabled" :
+        calibration_.valid() ? "Tracking occluded; calibration retained, tracker output suspended" :
+        "Calibration unavailable; recalibration required, tracker output suspended");
       set_ready(ready);
     }
     if (!ready) {
