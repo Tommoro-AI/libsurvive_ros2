@@ -30,10 +30,14 @@
 int main(int argc, char * argv[])
 {
   rclcpp::init(argc, argv);
-  rclcpp::executors::SingleThreadedExecutor exec;
-  auto node = std::make_shared<libsurvive_ros2::Component>(rclcpp::NodeOptions{});
-  exec.add_node(node);
-  exec.spin();
-  rclcpp::shutdown();
+  try {
+    rclcpp::executors::SingleThreadedExecutor exec;
+    auto node = std::make_shared<libsurvive_ros2::Component>(rclcpp::NodeOptions{});
+    exec.add_node(node);
+    exec.spin();
+    rclcpp::shutdown();
+  } catch (const rclcpp::exceptions::RCLError &) {
+    if (rclcpp::ok()) {throw;}
+  }
   return 0;
 }
