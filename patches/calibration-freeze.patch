@@ -1,0 +1,223 @@
+diff --git a/include/libsurvive/survive.h b/include/libsurvive/survive.h
+--- a/include/libsurvive/survive.h
++++ b/include/libsurvive/survive.h
+@@ -393,6 +393,7 @@
+ 	int driver_ct;
+ 
+ 	SurviveState state;
++	bool calibration_frozen; // Protected by the context lock; reset by creating a new context.
+ 	SurviveError currentError;
+ 
+ 	void *buttonservicethread;
+@@ -463,6 +464,9 @@
+ SURVIVE_EXPORT int survive_startup(SurviveContext *ctx);
+ SURVIVE_EXPORT int survive_poll(SurviveContext *ctx);
+ SURVIVE_EXPORT void survive_close(SurviveContext *ctx);
++// Call outside callbacks/context lock, serialized with close and other freeze calls.
++// Retains tracking and OOTX; returns false if no calibrated Lighthouse is available.
++SURVIVE_EXPORT bool survive_freeze_calibration(SurviveContext *ctx);
+ SURVIVE_EXPORT void survive_get_ctx_lock(SurviveContext *ctx);
+ SURVIVE_EXPORT void survive_release_ctx_lock(SurviveContext *ctx);
+ 
+diff --git a/src/driver_global_scene_solver.c b/src/driver_global_scene_solver.c
+--- a/src/driver_global_scene_solver.c
++++ b/src/driver_global_scene_solver.c
+@@ -157,6 +157,8 @@
+ }
+ 
+ static bool run_optimization(global_scene_solver *gss) {
++	if (gss->ctx->calibration_frozen)
++		return false;
+ 	if (gss->solve_counts > gss->solve_count_max && gss->solve_count_max > 0)
+ 		return false;
+ 
+@@ -169,6 +171,7 @@
+ 	gss->solve_counts++;
+ 
+ 	bool success = gss->ctx->PoserFn(gss->ctx->objs[0], (PoserData *)&pgss) == 0;
++	success = success && !gss->ctx->calibration_frozen;
+ 	if(success) {
+ 		if(gss->auto_floor) {
+ 			FLT min_z = gss->ctx->floor_offset;
+@@ -220,6 +223,8 @@
+ }
+ 
+ static void set_needs_solve(global_scene_solver *gss) {
++	if (gss->ctx->calibration_frozen)
++		return;
+ 	FLT now = survive_run_time(gss->ctx);
+ 
+ 	for (int lh = 0; lh < gss->ctx->activeLighthouses; lh++) {
+@@ -227,8 +232,12 @@
+ 			return;
+ 	}
+ 
++	if (gss->threaded)
++		OGLockMutex(gss->data_available_lock);
+ 	gss->needsSolve = true;
+ 	gss->last_addition = now;
++	if (gss->threaded)
++		OGUnlockMutex(gss->data_available_lock);
+ }
+ 
+ static size_t check_object(global_scene_solver *gss, int i, SurviveObject *so) {
+@@ -269,7 +278,12 @@
+ 
+ 	OGUnlockMutex(gss->scenes_lock);
+ 
+-	if (gss->needsSolve && (gss->last_addition + 1) < survive_run_time(ctx)) {
++	if (gss->threaded)
++		OGLockMutex(gss->data_available_lock);
++	bool needs_solve = gss->needsSolve;
++	if (gss->threaded)
++		OGUnlockMutex(gss->data_available_lock);
++	if (needs_solve && (gss->last_addition + 1) < survive_run_time(ctx)) {
+ 		if (!gss->threaded) {
+ 			gss->needsSolve = false;
+ 			run_optimization(gss);
+@@ -304,7 +318,8 @@
+ 		gss->active = 0;
+ 		OGSignalCond(gss->data_available);
+ 		OGUnlockMutex(gss->data_available_lock);
+-		OGJoinThread(gss->thread);
++		if (gss->thread)
++			OGJoinThread(gss->thread);
+ 		OGDeleteConditionVariable(gss->data_available);
+ 
+ 		OGDeleteMutex(gss->data_available_lock);
+@@ -335,6 +350,8 @@
+ 		(global_scene_solver *)survive_get_driver_by_closefn(so->ctx, DriverRegGlobalSceneSolverClose);
+ 	gss->prior_light_pulse(so, sensor_id, acode, timecode, length, lh);
+ 
++	if (so->ctx->calibration_frozen)
++		return;
+ 	check_for_new_objects(gss);
+ 	check_object(gss, survive_get_so_idx(so), so);
+ }
+@@ -343,6 +360,8 @@
+ 		(global_scene_solver *)survive_get_driver_by_closefn(so->ctx, DriverRegGlobalSceneSolverClose);
+ 	gss->imu_fn(so, mask, accelgyro, timecode, id);
+ 
++	if (so->ctx->calibration_frozen)
++		return;
+ 	check_for_new_objects(gss);
+ 	check_object(gss, survive_get_so_idx(so), so);
+ }
+@@ -351,6 +370,8 @@
+ 		(global_scene_solver *)survive_get_driver_by_closefn(so->ctx, DriverRegGlobalSceneSolverClose);
+ 	gss->prior_sync_fn(so, channel, timeofsync, ootx, gen);
+ 
++	if (so->ctx->calibration_frozen)
++		return;
+ 	check_for_new_objects(gss);
+ 	check_object(gss, survive_get_so_idx(so), so);
+ }
+@@ -377,21 +398,43 @@
+ 	OGLockMutex(self->data_available_lock);
+ 	while (self->active) {
+ 		OGWaitCond(self->data_available, self->data_available_lock);
+-
+-		while (self->needsSolve) {
++		while (self->active && self->needsSolve) {
++			self->needsSolve = false;
+ 			OGUnlockMutex(self->data_available_lock);
+-			self->needsSolve = false;
+ 			survive_get_ctx_lock(self->ctx);
+-			run_optimization(self);
++			if (!self->ctx->calibration_frozen) {
++				run_optimization(self);
++				self->run_count++;
++			}
+ 			survive_release_ctx_lock(self->ctx);
+-			self->run_count++;
+-
+ 			OGLockMutex(self->data_available_lock);
+ 		}
+ 	}
+ 	OGUnlockMutex(self->data_available_lock);
+ 	return 0;
+ }
++
++int FreezeGlobalSceneSolver(SurviveContext *ctx) {
++	survive_get_ctx_lock(ctx);
++	global_scene_solver *gss =
++		(global_scene_solver *)survive_get_driver_by_closefn(ctx, DriverRegGlobalSceneSolverClose);
++	if (gss && gss->threaded) {
++		OGLockMutex(gss->data_available_lock);
++		gss->needsSolve = false;
++		gss->active = false;
++		OGSignalCond(gss->data_available);
++		OGUnlockMutex(gss->data_available_lock);
++	}
++	survive_release_ctx_lock(ctx);
++	// An optimizer may be waiting to reacquire the context lock to discard its result.
++	if (gss && gss->threaded && gss->thread) {
++		OGJoinThread(gss->thread);
++		gss->thread = 0;
++	}
++	return 0;
++}
++
++REGISTER_LINKTIME(FreezeGlobalSceneSolver)
+ 
+ int DriverRegGlobalSceneSolver(SurviveContext *ctx) {
+ 	int disableCalibrate = survive_configi(ctx, "disable-calibrate", SC_GET, 0);
+diff --git a/src/poser_mpfit.c b/src/poser_mpfit.c
+--- a/src/poser_mpfit.c
++++ b/src/poser_mpfit.c
+@@ -366,7 +366,7 @@
+ 	// This just spaces out the controllers; forces an order onto what trys to calibrate what
+ 	int syncs_required = 200 - so->sensor_ct * 2 - (so->codename[2] - '0') * 10;
+ 
+-	if (bestObjForCal || (d->syncs_seen > syncs_required && objectStationary)) {
++	if (!ctx->calibration_frozen && (bestObjForCal || (d->syncs_seen > syncs_required && objectStationary))) {
+ 		for (int lh = 0; lh < so->ctx->activeLighthouses; lh++) {
+ 			if (!so->ctx->bsd[lh].OOTXSet) {
+ 				// Wait til this thing gets OOTX, and then solve for as much as we can. Avoids doing
+@@ -512,6 +512,8 @@
+ 
+ 	SurviveObject *so = d->opt.so;
+ 	struct SurviveContext *ctx = so->ctx;
++	if (ctx->calibration_frozen && canPossiblySolveLHS)
++		return -1;
+ 
+ 	SV_DATA_LOG("mpfit_norm_best", &result->bestnorm, 1);
+ 	SV_DATA_LOG("mpfit_norm_orig", &result->orignorm, 1);
+@@ -996,6 +998,8 @@
+ 	survive_optimizer_covariance_expand(&mpfitctx, &R_free, &R);
+ 
+ 	survive_get_ctx_lock(ctx);
++	if (ctx->calibration_frozen)
++		return false;
+ 	survive_recording_write_matrix(ctx->recptr, 0, 5, "GSS", &R);
+ 	/* MP_MAXITER means the solver exhausted its iteration budget without
+ 	 * converging. The result is an intermediate, unconverged pose — treat it
+diff --git a/src/survive.c b/src/survive.c
+--- a/src/survive.c
++++ b/src/survive.c
+@@ -997,6 +997,25 @@
+ #include "survive_hooks.h"
+ }
+ 
++SURVIVE_EXPORT bool survive_freeze_calibration(SurviveContext *ctx) {
++	if (!ctx)
++		return false;
++	survive_get_ctx_lock(ctx);
++	bool calibrated = false;
++	for (int i = 0; i < ctx->activeLighthouses; i++)
++		calibrated |= !ctx->bsd[i].disable && ctx->bsd[i].PositionSet && ctx->bsd[i].OOTXSet;
++	if (!calibrated) {
++		survive_release_ctx_lock(ctx);
++		return false;
++	}
++	ctx->calibration_frozen = true;
++	survive_release_ctx_lock(ctx);
++	DeviceDriver freeze = (DeviceDriver)GetDriver("FreezeGlobalSceneSolver");
++	if (freeze)
++		freeze(ctx);
++	return true;
++}
++
+ void survive_close(SurviveContext *ctx) {
+ 	const char *DriverName;
+ 	int r = 0;

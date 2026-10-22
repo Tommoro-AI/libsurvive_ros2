@@ -1,33 +1,16 @@
 # libsurvive_ros2
-**A Steam-free driver for republishing Lighthouse 1.0 and 2.0 pose and sensor data to ROS2**
+A ROS 2 driver for Lighthouse 1.0 and 2.0 trackers using
+[libsurvive](https://github.com/cntools/libsurvive), without SteamVR.
+It publishes tracker poses, sensor data, and tracking readiness.
 
-[![CI Status](https://circleci.com/gh/asymingt/libsurvive_ros2.svg?style=svg)](https://app.circleci.com/pipelines/github/asymingt/libsurvive_ros2)
+This fork of [asymingt/libsurvive_ros2](https://github.com/asymingt/libsurvive_ros2)
+adds fixed-frame calibration and tracking diagnostics. CMake fetches a pinned
+libsurvive revision and applies the patches in `patches/` during the build.
 
-This is a lightweight ROS2 wrapper around the [libsurvive](https://github.com/cntools/libsurvive) project, which provides a set of drivers for 6DoF rigid body tracking using SteamVR 1.0 and 2.0 hardware. It also listens for inertial, button, configuration and device connection events, and forwards these to various topics.
+## Installation instructions
 
-This hardware is particularly useful to robotics projects, because it provides a cost effective method of obtaining ground truth with a positional accuracy typically in the sub-centimeter, sub-degree range. The final accuracy of course depends on the tracking volume, base station number and placement and level of occlusion, as well as calibration quality.
-
-The driver in this repo is largely based on the ROS1 driver [here](https://github.com/cntools/libsurvive/tree/master/tools/ros_publisher). It has been migrated to ROS2, and refactored slightly -- we use a thread to manage the blocking interaction with libsurvive, so that it doesn't lock the ROS2 callback queue and prevent messages from propagating correctly.
-
-When you build this package, `cmake` pulls and builds a pinned `libsurvive` revision via `FetchContent`, then links against that target.
-
-Progress:
-
-- [x] code ported
-- [x] documentation added
-- [x] test imu callback
-- [x] test connect callback
-- [x] fix timestamp errors
-- [x] fix button callback (only works on Tracker 2.0 wirelessly via watchman)
-- [x] add linting checks (nice to have)
-- [ ] add unit tests
-- [ ] fix composable node (not a functional blocker right now)
-- [ ] convert to lifecycle node (nice to have)
-- [ ] add circlce, mergify and dependebot integration
-
-# Installation instructions
-
-This has only been tested on Ubuntu 22.04 and ROS Humble, although its fairly likely to work correctly with other distributions too. Pull requests are welcome if it does not!
+The supplied Docker image targets ROS 2 Jazzy. The same package can be built in
+a native ROS 2 workspace.
 
 Before you do anything, you will need to install these udev rules and reload the subsystem.
 
@@ -39,23 +22,17 @@ sudo udevadm control --reload-rules && sudo udevadm trigger
 
 You can now choose to build the driver natively or in a container. The benefit of launching it within a container is that it won't interfere with any pre-existing ROS installation on your machine. However, you will need docker-ce and the compose plugin for things to work.
 
-## Devcontainer build and test (easiest for development)
+### Devcontainer build and test
 
 You can open this project as a [Visual Studio Code Devcontainer](https://code.visualstudio.com/docs/devcontainers/containers). It will then prompt you for a target ROS distribution in the drop-down menu at the top of the IDE. When you select your desired distribution, the devcontainer engine will build a container for this ROS distribution, install our project dependencies, and compile the code. You can just open up a terminal and run:
 
 ```sh
-ros@0d81683baf55:~/ros2_ws$ ros2 launch libsurvive_ros2 libsurvive_ros2.launch.py 
-[INFO] [launch]: All log files can be found below /home/ros/.ros/log/2025-06-06-17-17-41-207302-0d81683baf55-2267
-[INFO] [launch]: Default logging verbosity is set to INFO
-[INFO] [libsurvive_ros2_node-1]: process started with pid [2304]
-[libsurvive_ros2_node-1] Info: Loaded drivers: GlobalSceneSolver, HTCVive
-[libsurvive_ros2_node-1] [INFO] [1749230261.309788197] [libsurvive.libsurvive_ros2_node]: Start listening for events..
-[libsurvive_ros2_node-1] [INFO] [1749230261.309834518] [libsurvive.libsurvive_ros2_node]: Cleaning up.
+ros2 launch libsurvive_ros2 libsurvive_ros2.launch.py
 ```
 
 Volume binding of the source tree happens with the correct permission. So, if you edit the source code in the container folder `/home/ros/ros2_ws/src/libsurvive_ros2` your changes will propagate to your host folder, where you can eventually push them upstream. It is also possible to use git within the container, but this is more complicated and not recommended.
 
-## Containerized build and test (easiest and recommended)
+### Container build and test
 
 Install docker and docker-compose: https://docs.docker.com/engine/install/ubuntu/
 
@@ -64,20 +41,20 @@ $ docker compose build
 $ docker compose run libsurvive_ros2 colcon test
 ```
 
-This will checkout a lightweight ROS2 rolling container, augment it with a few system dependencies, checkout and build the code and drop you into a bash shell as user `ros` at the home directory `/home/ros/ros2_ws/src`. If you'd rather build and test for ROS2 Foxy on arm64, as an example, you'd do this:
+The image builds this checkout in a ROS 2 Jazzy workspace. To build for arm64:
 
 ```sh
-$ docker compose build --build-arg ARCH=arm64 --build-arg ROS_DISTRO=foxy
+$ docker compose build --build-arg ARCH=arm64 --build-arg ROS_DISTRO=jazzy
 $ docker compose run libsurvive_ros2 colcon test  # optional, to test the package
 ```
 
 Note that if you are building on a different architecture than the host you must follow the docker/QEMU installation instructions here before running the command above. Here is a link to a document outlining how this is done: https://docs.nvidia.com/datacenter/cloud-native/playground/x-arch.html
 
-## Native build and test (not recommended)
+### Native build and test
 
-You'll need ROS2 installed: https://docs.ros.org/en/humble/Installation.html
+Install ROS 2 Jazzy before building this package.
 
-You'll also need to follow the instructions here: 
+Install the native dependencies:
 
 ```sh
 sudo apt-get install build-essential \
@@ -94,9 +71,10 @@ sudo apt-get install build-essential \
 Finally source ROS2, create a workspace, checkout, compile and test:
 
 ```sh
-$ mkdir ~/ros2_ws/src
+$ source /opt/ros/jazzy/setup.bash
+$ mkdir -p ~/ros2_ws/src
 $ cd  ~/ros2_ws/src
-$ git clone https://github.com/asymingt/libsurvive_ros2.git
+$ git clone https://github.com/Tommoro-AI/libsurvive_ros2.git
 $ cd ..
 $ rosdep update
 $ rosdep install --from-paths src --ignore-src -r -y
@@ -105,7 +83,7 @@ $ colcon test  # optional, to test the package
 $ source install/setup.bash
 ```
 
-# Running the code
+## Run the driver
 
 To run the driver on containerized installations do the following:
 
@@ -140,15 +118,95 @@ Velocity and battery behavior:
 - `/<namespace>/<battery_topic>` publishes `sensor_msgs/BatteryState`.
 - `header.frame_id` is the device serial; `percentage` and charging/discharging status are populated from libsurvive object state.
 
-# Common questions
+## Calibration and troubleshooting
 
 - **I don't see any data streaming** Examine the console log. If you see a LIBUSB error, chances are high that you either haven't installed the udev rules, or you haven't mounted the /dev/bus/usb volume correctly into the docker container.
 
-- **How do I configure this for my specific tracker ID?** There's no need -- the libsurvive driver will enumerate all devices, query their ID and publish this ID as the transform name using the TF2 standard topic `/tf`. Base station positions change less frequently, and so they are published at a lowe rate on `/tf_static`.
+- **How do I configure this for my specific tracker ID?** There's no need -- the libsurvive driver will enumerate all devices, query their ID and publish this ID as the transform name using the TF2 standard topic `/tf`. Base station positions change less frequently, and so they are published at a lower rate on `/tf_static`.
 
-- **The base stations locations are not where I'd expect them to be** -- The calibration phase of libsurvive works out the relative location of the base stations automatically, but the orientation of `libsurvive_world` is not map-aligned by default. Applications that require `map` should provide their own `map -> libsurvive_world` transform.
+- **The base stations locations are not where I'd expect them to be** -- The calibration phase of libsurvive works out the relative location of the base stations automatically, but the configured `tracking_frame` is not map-aligned by default. Its default is `libsurvive_frame`; mocap bringup uses `libsurvive_world`. Applications that require `map` must provide the corresponding alignment transform.
 
-- Startup automatically selects stations with recent optical observations and fixes their calibrated poses after 2 seconds of stability. Every native context, including the fixed-pose reopen, requires a freshly received OOTX packet from each observed station before readiness; cached OOTX alone is insufficient. No station count is configured. `force_recalibrate:=false` reuses the saved configuration for an unchanged installation, but still refreshes OOTX.
+- Startup automatically selects stations with recent optical observations and fixes their calibrated poses after 2 seconds of stability. Each new native context requires freshly received OOTX from each observed station; cached OOTX alone is insufficient. Calibration then freezes in the same context: the global solver worker stops, pending calibration results are discarded, and device connections, tracker filters, OOTX information and the validated station baseline remain intact. The retained layout is checked again before tracker output starts. No station count is configured. `force_recalibrate:=false` reuses the saved configuration for an unchanged installation, but still refreshes OOTX. An explicit recalibration creates a new context and repeats these checks.
 - `~/ready` reports usable optical tracking; `~/calibration_valid` reports whether the station layout is retained. Both use `std_msgs/Bool`, reliable, transient-local, with a 200 ms heartbeat. `~/recalibrate` (`std_srvs/Trigger`) requests calibration only when the layout is invalid, including during startup. Consumers must stop motion before requesting recalibration and explicitly resume after readiness returns.
 - A newly observed station, a station without optical observations for 5 seconds, an invalidated/changed calibrated pose, or a changed OOTX up direction invalidates the fixed frame until recalibration. OOTX changes invalidate calibration even if optical input continues and the SDK retains the reference station's pose. Cached SDK station entries alone do not establish visibility. During shorter occlusions, `ready=false` but `calibration_valid=true`: the layout is retained and tracker poses are withheld. Returning stations must match the retained layout; recovery does not request recalibration or automatically resume motion. A brief power interruption is indistinguishable from occlusion if the same station information returns within this interval.
 - Tracker poses are published without smoothing. Consumers handle filtering and stale or discontinuous input. Station loss cannot be distinguished from prolonged occlusion of every tracker. Physical movement that leaves the SDK's calibration unchanged, including translation with a single station, is not guaranteed to be detected. Recalibration can change the world frame and requires updating external alignment.
+
+### Optical consistency logging
+
+The driver emits `Optical diagnostic only` once per device per second. This is
+observation only. It does not change tracking poses, TF publication, readiness,
+calibration, timeout handling, or robot safety checks.
+
+The patched SDK copies the existing MPFIT optical residual statistics after a
+solve, including failed solves. `rms_rad` is the unweighted angular RMS from the
+last native residual evaluation. It is not a new residual calculation or a
+promise that the final published pose has this error. `residuals`, `axes` (SDK
+station index followed by horizontal/vertical counts), `solver_status`, device
+`device_ticks`, measurement age, and the SDK's adaptive measurement window
+provide context. `device` is the immutable SDK object name (for example `WM0`),
+not its configuration-updated hardware serial. Device ticks are not wall-clock timestamps.
+
+`peak_rms_rad`, its residual/station support, and fit/failure/invalid counters
+cover the interval since the previous log. A brief high residual remains visible
+even if the latest fit has recovered. The other fields describe the latest fit,
+so their coverage can differ from the interval peak. Logging drains diagnostic
+counters under the SDK lock and formats/writes the message after releasing it.
+No additional residual evaluation or logging runs in the optimizer.
+
+The provisional labels have no control effect:
+
+- `normal` means the interval peak has at least eight residuals from at least two
+  stations with both axes and angular RMS at most 0.01 rad (about 0.57 degrees).
+- `suspect` means that supported peak exceeds 0.01 rad, a solve failed, or a solve
+  produced unavailable/nonfinite residual statistics.
+- `insufficient` means no fit yet, calibration fitting is active, measurement
+  timing is invalid/outside the native window, or peak coverage is inadequate.
+- `stale` means no new fit sequence was observed for at least one steady-clock
+  second. It does not refer to ROS time or convert device ticks to an epoch.
+
+The 0.01 rad threshold is an initial logging aid, not a validated detector of
+base-station movement. Occlusion, reflections and poor geometry can also raise
+residuals. A coherent coordinate shift or a single usable station can leave low
+residuals despite incorrect world coordinates. Native filtering can discard
+inconsistent observations before these residuals are reported. Interval
+`dropped_measurements` and `dropped_lighthouses` sum the native filter counters
+across fits; they are not counts of unique sensors or stations. Compare normal
+motion, occlusion and intentional station-change logs before considering any
+future blocking policy. Recalibration clears the diagnostic history with the SDK
+context; SDK disconnect clears the native snapshot and a device-add event clears
+its reader history. Disconnected entries are skipped without reading freed native
+objects. `stale` and latest-fit `insufficient` conditions take priority
+over the interval `suspect` label. Raw interval peaks and failure counts are still
+printed when the latest fit is unavailable or calibration has started.
+
+
+Each per-device line also reports `trend`, `baseline_rms_rad`, `rise_ratio`,
+`rise_seconds` and `trend_eligible`. These are independent of the interval quality
+`state` above. Baseline learning starts after calibration is valid and frozen.
+It uses the median of five fresh eligible observations spanning at least four
+steady-clock seconds. The baseline remains fixed until calibration invalidation,
+a new context or device reconnection. Ordinary occlusion retains the baseline.
+The median tolerates up to two outlying samples, but movement during learning can
+contaminate the baseline; this diagnostic cannot identify that condition.
+
+Trend eligibility requires a new fit sequence, a successful latest solve, at
+least eight latest residuals, both axes from at least two stations, finite
+nonnegative latest RMS, and valid measurement timing within the native window.
+Interval peak coverage does not substitute for latest coverage. `trend` is
+`unavailable` without eligible data, `learning` until the baseline is acquired,
+and `normal` below the rise threshold. The provisional rise threshold is the
+larger of four times baseline and baseline plus 0.0003 rad. `rising` becomes
+`sustained` after at least three steady-clock seconds of consecutive eligible
+observations. Invalid/repeated observations and gaps longer than 1.5 seconds
+break persistence and reset incomplete baseline learning. Acquired baselines
+remain intact across these gaps. An isolated interval peak does not count as a
+sustained rise.
+
+`Optical trend only` summarizes only eligible observations from the current log
+pass whose baseline has been acquired. It prints comparable, rising and
+sustained tracker counts. With fewer than two comparable trackers its state is `unavailable`; otherwise it is
+`simultaneous_sustained` for at least two sustained rises, `single_sustained` for
+one, or `normal`. A disconnected or stale tracker cannot contribute a cached
+verdict. Simultaneous residual growth is evidence of optical inconsistency, not
+proof of station motion. These thresholds need validation against varied normal
+movement and occlusion; no trend label blocks input or changes safety behavior.

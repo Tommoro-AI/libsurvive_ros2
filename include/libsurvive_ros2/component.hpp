@@ -45,6 +45,7 @@
 #include "libsurvive/survive_api.h"
 #include "libsurvive_ros2/msg/occlusion_status.hpp"
 #include "libsurvive_ros2/tracking_calibration.hpp"
+#include "libsurvive_ros2/optical_diagnostic.hpp"
 #include "rclcpp/rclcpp.hpp"
 #include "sensor_msgs/msg/battery_state.hpp"
 #include "sensor_msgs/msg/imu.hpp"
@@ -74,8 +75,11 @@ public:
 
 private:
   void work();
+  void log_optical_diagnostics();
+  OpticalDiagnosticMonitor::Clock::time_point last_optical_log_{};
+  std::unordered_map<std::string, OpticalDiagnosticMonitor> optical_monitors_;
   bool tracking_ready();
-  bool start_driver(bool fixed_calibration, bool recalibrate = false);
+  bool start_driver(bool recalibrate = false);
   void set_ready(bool ready);
   TrackingCalibration calibration_;
   std::atomic_bool tracking_ready_{false};

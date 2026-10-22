@@ -20,7 +20,9 @@
 // THE SOFTWARE.
 
 // C++ system
+#include <algorithm>
 #include <chrono>
+#include <cinttypes>
 #include <cmath>
 #include <cstdint>
 #include <limits>
@@ -30,8 +32,8 @@
 #include <thread>
 #include <vector>
 
-#include <tf2/LinearMath/Quaternion.h>
-#include <tf2/LinearMath/Vector3.h>
+#include "tf2/LinearMath/Quaternion.h"
+#include "tf2/LinearMath/Vector3.h"
 
 // Other
 #include "libsurvive_ros2/component.hpp"
@@ -194,7 +196,7 @@ Component::Component(const rclcpp::NodeOptions & options)
         }
     });
   driver_args_ = declare_parameter<std::string>("driver_args", "--disable-calibrate 0");
-  if (!start_driver(false)) {return;}
+  if (!start_driver()) {return;}
   tracking_started_ = survive_configi(
     survive_simple_get_ctx(actx_), "disable-calibrate", SC_GET, 0) != 0;
 
@@ -348,7 +350,7 @@ void Component::set_ready(bool ready)
   ready_publisher_->publish(std_msgs::msg::Bool().set__data(ready));
 }
 
-bool Component::start_driver(bool fixed_calibration, bool recalibrate)
+bool Component::start_driver(bool recalibrate)
 {
   // A new native context must prove optical visibility before becoming ready.
   station_observations_ = {};
@@ -357,7 +359,7 @@ bool Component::start_driver(bool fixed_calibration, bool recalibrate)
   std::stringstream input(driver_args_);
   std::string token;
   while (input >> token) {args.push_back(token);}
-  if (fixed_calibration || recalibrate) {
+  if (recalibrate) {
     for (std::size_t i = 1; i < args.size(); ) {
       if (args[i] == "--force-calibrate" || args[i] == "--disable-calibrate") {
         args.erase(args.begin() + i);
@@ -368,8 +370,7 @@ bool Component::start_driver(bool fixed_calibration, bool recalibrate)
         ++i;
       }
     }
-    args.insert(args.end(), {"--force-calibrate", fixed_calibration ? "0" : "1",
-        "--disable-calibrate", fixed_calibration ? "1" : "0"});
+    args.insert(args.end(), {"--force-calibrate", "1", "--disable-calibrate", "0"});
   }
   // Cached OOTX must not make a new context ready before receiving a fresh packet.
   args.insert(args.end(), {"--force-ootx", "1"});
@@ -443,6 +444,62 @@ bool Component::tracking_ready()
   return calibration_.update(stations, now);
 }
 
+void Component::log_optical_diagnostics()
+{
+  const auto now = OpticalDiagnosticMonitor::Clock::now();
+  if (now - last_optical_log_ < std::chrono::seconds(1)) {return;}
+  last_optical_log_ = now;
+  OpticalTrendSummary summary;
+  const SurviveSimpleObject * it = nullptr;
+  while (true) {
+    survive_simple_lock(actx_);
+    it = it ? survive_simple_get_next_object(actx_, it) : survive_simple_get_first_object(actx_);
+    if (!it) {
+      survive_simple_unlock(actx_);
+      break;
+    }
+    std::array<char, 32> name{};
+    std::copy_n(survive_simple_object_name(it), name.size() - 1, name.begin());
+    survive_simple_unlock(actx_);
+    SurviveOpticalDiagnostic sample{};
+    if (!survive_simple_get_optical_diagnostic(it, &sample)) {continue;}
+    const std::string serial(name.data());
+    const auto observation = optical_monitors_[serial].observe(
+      sample, now, calibration_.valid() && tracking_started_);
+    summary.add(observation);
+    std::ostringstream axes;
+    for (int lh = 0; lh < NUM_GEN2_LIGHTHOUSES; ++lh) {
+      if (sample.axis_count[2 * lh] || sample.axis_count[2 * lh + 1]) {
+        axes << lh << ':' << sample.axis_count[2 * lh] << '/' <<
+          sample.axis_count[2 * lh + 1] << ',';
+      }
+    }
+    RCLCPP_INFO(get_logger(),
+      "Optical diagnostic only device=%s state=%s sequence=%" PRIu64 " device_ticks=%" PRIu64 " "
+      "rms_rad=%.6g residuals=%u peak_rms_rad=%.6g peak_residuals=%u peak_lighthouses=%u "
+      "fits=%u failed=%u invalid=%u dropped_measurements=%u dropped_lighthouses=%u "
+      "solver_status=%d fitting_lighthouses=%d "
+      "max_measurement_age_ms=%.3f window_ms=%.3f axes=%s "
+      "trend=%s baseline_rms_rad=%.6g rise_ratio=%.3f rise_seconds=%.3f trend_eligible=%d",
+      serial.c_str(), observation.state, static_cast<std::uint64_t>(sample.sequence),
+      static_cast<std::uint64_t>(sample.timecode),
+      sample.sequence ? static_cast<double>(sample.rms_rad) :
+      std::numeric_limits<double>::quiet_NaN(),
+      sample.residual_count, sample.peak_residual_count ?
+      static_cast<double>(sample.peak_rms_rad) : std::numeric_limits<double>::quiet_NaN(),
+      sample.peak_residual_count, sample.peak_lighthouse_count, sample.fits, sample.failed_fits,
+      sample.invalid_fits, sample.dropped_measurements, sample.dropped_lighthouses,
+      sample.solver_status, sample.fitting_lighthouses,
+      1000.0 * sample.max_age_seconds, 1000.0 * sample.window_seconds, axes.str().c_str(),
+      observation.trend, observation.baseline_rad,
+      observation.baseline_rad > 0 ? sample.rms_rad / observation.baseline_rad :
+      std::numeric_limits<double>::quiet_NaN(), observation.rise_seconds, observation.eligible);
+  }
+  RCLCPP_INFO(get_logger(),
+    "Optical trend only state=%s comparable_trackers=%u rising_trackers=%u sustained_trackers=%u",
+    summary.state(), summary.comparable, summary.rising, summary.sustained);
+}
+
 void Component::work()
 {
   RCLCPP_INFO(this->get_logger(), "Start listening for events..");
@@ -458,20 +515,28 @@ void Component::work()
       survive_simple_close(actx_);
       actx_ = nullptr;
       tracking_started_ = false;
-      if (!start_driver(false, true)) {return;}
+      optical_monitors_.clear();
+      last_optical_log_ = {};
+      if (!start_driver(true)) {return;}
       RCLCPP_INFO(get_logger(),
           "Recalibrating Lighthouse layout; tracker output remains suspended");
       continue;  // The current event belongs to the closed native context.
     }
     const bool ready = tracking_ready();
+    if (!calibration_.valid()) {optical_monitors_.clear();}
     if (ready && !tracking_started_) {
-      survive_simple_close(actx_);
-      actx_ = nullptr;
-      if (!start_driver(true)) {return;}
+      if (!survive_freeze_calibration(survive_simple_get_ctx(actx_))) {
+        calibration_.invalidate();
+        set_ready(false);
+        RCLCPP_FATAL(get_logger(), "Could not freeze Lighthouse calibration safely");
+        rclcpp::shutdown();
+        return;
+      }
       tracking_started_ = true;
+      optical_monitors_.clear();
       RCLCPP_INFO(get_logger(),
-          "Calibration saved; waiting for fresh optical input with fixed Lighthouse poses");
-      continue;  // The current event belongs to the closed context.
+          "Lighthouse calibration frozen in place; retaining optical tracking state");
+      continue;  // Recheck the retained layout before publishing a subsequent event.
     }
     if (ready != tracking_ready_ || calibration_.valid() != calibration_valid_) {
       RCLCPP_INFO(get_logger(), "%s",
@@ -537,7 +602,6 @@ void Component::work()
                 velocity_msg.twist.angular.z = angular_body.z();
                 publish_velocity(velocity_msg);
               }
-
             }
           }
           break;
@@ -581,6 +645,7 @@ void Component::work()
       case SurviveSimpleEventType_DeviceAdded: {
           const struct SurviveSimpleObjectEvent * object_event = survive_simple_get_object_event(
             &event);
+          optical_monitors_.erase(survive_simple_object_name(object_event->object));
           RCLCPP_INFO(
             this->get_logger(), "A new device %s was added at time %lf",
             survive_simple_serial_number(object_event->object),
@@ -601,6 +666,8 @@ void Component::work()
     }
 
     if (!actx_) {break;}
+
+    log_optical_diagnostics();
 
     // Always update the base stations
     const auto publication_time = steady_clock_.now();

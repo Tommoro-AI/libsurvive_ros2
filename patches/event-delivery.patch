@@ -1,0 +1,74 @@
+--- a/src/survive_api.c
++++ b/src/survive_api.c
+@@ -58,6 +58,7 @@
+ 	struct SurviveSimpleEvent events[MAX_EVENT_SIZE];
+ 
+ 	struct SurviveSimpleObjectList objects;
++	SurviveSimpleObject *last_updated;
+ };
+ 
+ static enum SurviveSimpleObject_type to_simple_type(SurviveObjectType sot) {
+@@ -173,9 +174,8 @@
+ 	ctx->bsd[i].user_ptr = obj;
+ 	snprintf(obj->name, 32, "LH%" PRIdPTR, i);
+ 	snprintf(obj->data.lh.serial_number, 16, "LHB-%X", (unsigned)ctx->bsd[i].BaseStationID);
++	OGLockMutex(actx->poll_mutex);
+ 	SurviveSimpleObjectList_add(&actx->objects, obj);
+-
+-	OGLockMutex(actx->poll_mutex);
+ 	SurviveSimpleEvent event = {.event_type = SurviveSimpleEventType_DeviceAdded,
+ 								.d = {.object_event = {
+ 										  .time = survive_simple_run_time_since_epoch(actx),
+@@ -270,9 +270,8 @@
+ 	obj->data.so->user_ptr = (void *)obj;
+ 	strncpy(obj->name, obj->data.so->codename, sizeof(obj->name));
+ 
++	OGLockMutex(actx->poll_mutex);
+ 	SurviveSimpleObjectList_add(&actx->objects, obj);
+-
+-	OGLockMutex(actx->poll_mutex);
+ 	survive_default_new_object_process(so);
+ 	SurviveSimpleEvent event = {.event_type = SurviveSimpleEventType_DeviceAdded,
+ 								.d = {.object_event = {
+@@ -385,12 +384,22 @@
+ size_t survive_simple_get_object_count(SurviveSimpleContext *actx) { return actx->objects.cnt; }
+ 
+ const SurviveSimpleObject *survive_simple_get_next_updated(SurviveSimpleContext *actx) {
+-	for (struct SurviveSimpleObject *n = actx->objects.head; n; n = n->next) {
+-		if (n->has_update) {
+-			n->has_update = false;
+-			return n;
+-		}
+-	}
++	OGLockMutex(actx->poll_mutex);
++	SurviveSimpleObject *first = actx->last_updated && actx->last_updated->next
++		? actx->last_updated->next : actx->objects.head;
++	SurviveSimpleObject *n = first;
++	if (n) {
++		do {
++			if (n->has_update) {
++				n->has_update = false;
++				actx->last_updated = n;
++				OGUnlockMutex(actx->poll_mutex);
++				return n;
++			}
++			n = n->next ? n->next : actx->objects.head;
++		} while (n != first);
++	}
++	OGUnlockMutex(actx->poll_mutex);
+ 	return 0;
+ }
+ 
+@@ -567,7 +576,11 @@
+ 
+ bool survive_simple_wait_for_update(SurviveSimpleContext *actx) {
+ 	OGLockMutex(actx->poll_mutex);
+-	OGWaitCondTimeout(actx->update_cv, actx->poll_mutex, 100);
++	bool pending = actx->events_cnt != 0;
++	for (SurviveSimpleObject *n = actx->objects.head; !pending && n; n = n->next)
++		pending = n->has_update;
++	if (!pending && actx->running)
++		OGWaitCondTimeout(actx->update_cv, actx->poll_mutex, 100);
+ 	OGUnlockMutex(actx->poll_mutex);
+ 	return survive_simple_is_running(actx);
+ }

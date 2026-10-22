@@ -40,15 +40,15 @@ add_compile_options(-Wall -Wextra -Wpedantic)
 
 # Fetch and build libsurvive during configure.
 include(FetchContent)
-FetchContent_Declare(
+fetchcontent_declare(
   libsurvive_src
   GIT_REPOSITORY https://github.com/cntools/libsurvive.git
   GIT_TAG f1e6eddb669320f2a30760f4b42936bdb4306da0)
-FetchContent_MakeAvailable(libsurvive_src)
+fetchcontent_makeavailable(libsurvive_src)
 
 # Keep upstream fixes across clean builds and reconfigure.
 find_package(Git REQUIRED)
-foreach(patch_name lighthouse-covariance plugin-deduplication)
+foreach(patch_name lighthouse-covariance plugin-deduplication calibration-freeze event-delivery optical-diagnostic)
   set(upstream_patch "${CMAKE_CURRENT_SOURCE_DIR}/patches/${patch_name}.patch")
   execute_process(
     COMMAND ${GIT_EXECUTABLE} apply --reverse --check ${upstream_patch}
@@ -72,7 +72,7 @@ elseif(TARGET libsurvive)
 else()
   message(
     FATAL_ERROR
-      "Could not find a libsurvive CMake target after FetchContent_MakeAvailable()."
+      "Could not find a libsurvive CMake target after fetchcontent_makeavailable()."
   )
 endif()
 
@@ -88,8 +88,9 @@ find_package(std_srvs REQUIRED)
 find_package(tf2 REQUIRED)
 find_package(tf2_ros REQUIRED)
 
-rosidl_generate_interfaces(${PROJECT_NAME} "msg/OcclusionStatus.msg"
-                           DEPENDENCIES std_msgs)
+rosidl_generate_interfaces(
+  ${PROJECT_NAME} "msg/OcclusionStatus.msg"
+  DEPENDENCIES std_msgs)
 
 # Universally add this components includes
 include_directories(include)
@@ -98,12 +99,13 @@ include_directories(include)
 add_library(libsurvive_ros2_component SHARED src/component.cpp)
 target_include_directories(
   libsurvive_ros2_component
-  PUBLIC ${libsurvive_src_SOURCE_DIR}/include
-         ${libsurvive_src_SOURCE_DIR}/include/libsurvive
-         ${libsurvive_src_SOURCE_DIR}/redist)
+  PUBLIC
+  ${libsurvive_src_SOURCE_DIR}/include
+  ${libsurvive_src_SOURCE_DIR}/include/libsurvive
+  ${libsurvive_src_SOURCE_DIR}/redist)
 target_link_libraries(libsurvive_ros2_component ${LIBSURVIVE_TARGET})
-target_compile_definitions(libsurvive_ros2_component
-                           PRIVATE "COMPOSITION_BUILDING_DLL")
+target_compile_definitions(
+  libsurvive_ros2_component PRIVATE "COMPOSITION_BUILDING_DLL")
 ament_target_dependencies(
   libsurvive_ros2_component
   rclcpp
@@ -114,8 +116,8 @@ ament_target_dependencies(
   std_srvs
   tf2
   tf2_ros)
-rosidl_get_typesupport_target(cpp_typesupport_target ${PROJECT_NAME}
-                              "rosidl_typesupport_cpp")
+rosidl_get_typesupport_target(
+  cpp_typesupport_target ${PROJECT_NAME} "rosidl_typesupport_cpp")
 target_link_libraries(libsurvive_ros2_component ${cpp_typesupport_target})
 
 # Manually compose the component into a node
@@ -138,6 +140,43 @@ install(DIRECTORY launch DESTINATION share/${PROJECT_NAME})
 
 # For testing only
 if(BUILD_TESTING)
+  add_executable(test_optical_diagnostic test/test_optical_diagnostic.cpp)
+  target_include_directories(test_optical_diagnostic PRIVATE
+    ${libsurvive_src_SOURCE_DIR}/include ${libsurvive_src_SOURCE_DIR}/include/libsurvive
+    ${libsurvive_src_SOURCE_DIR}/redist)
+  target_compile_options(test_optical_diagnostic PRIVATE -UNDEBUG)
+  target_link_libraries(test_optical_diagnostic ${LIBSURVIVE_TARGET})
+  add_test(NAME test_optical_diagnostic COMMAND test_optical_diagnostic)
+
+  add_executable(test_tracking_calibration test/test_tracking_calibration.cpp)
+  target_compile_options(test_tracking_calibration PRIVATE -UNDEBUG)
+  ament_target_dependencies(test_tracking_calibration tf2)
+  add_test(NAME test_tracking_calibration COMMAND test_tracking_calibration)
+
+  foreach(test_name calibration_freeze calibration_freeze_mpfit event_delivery optical_diagnostic_native)
+    add_executable(test_${test_name} test/test_${test_name}.c)
+    target_include_directories(test_${test_name} PRIVATE
+      ${libsurvive_src_SOURCE_DIR} ${libsurvive_src_SOURCE_DIR}/src
+      ${libsurvive_src_SOURCE_DIR}/include
+      ${libsurvive_src_SOURCE_DIR}/include/libsurvive ${libsurvive_src_SOURCE_DIR}/redist)
+    target_compile_options(test_${test_name} PRIVATE -UNDEBUG)
+    target_link_libraries(test_${test_name} ${LIBSURVIVE_TARGET} pthread)
+    add_test(NAME test_${test_name} COMMAND test_${test_name})
+    set_tests_properties(test_${test_name} PROPERTIES TIMEOUT 15)
+  endforeach()
+
+  add_executable(test_calibration_freeze_plugin test/test_calibration_freeze_plugin.c)
+  target_include_directories(test_calibration_freeze_plugin PRIVATE
+    ${libsurvive_src_SOURCE_DIR} ${libsurvive_src_SOURCE_DIR}/src
+    ${libsurvive_src_SOURCE_DIR}/include
+    ${libsurvive_src_SOURCE_DIR}/include/libsurvive ${libsurvive_src_SOURCE_DIR}/redist)
+  target_compile_options(test_calibration_freeze_plugin PRIVATE -UNDEBUG)
+  target_link_libraries(test_calibration_freeze_plugin ${LIBSURVIVE_TARGET} ${CMAKE_DL_LIBS})
+  add_dependencies(test_calibration_freeze_plugin driver_global_scene_solver)
+  add_test(NAME test_calibration_freeze_plugin
+    COMMAND test_calibration_freeze_plugin $<TARGET_FILE:driver_global_scene_solver>)
+  set_tests_properties(test_calibration_freeze_plugin PROPERTIES TIMEOUT 15)
+
   find_package(ament_lint_auto REQUIRED)
   ament_lint_auto_find_test_dependencies()
 endif()

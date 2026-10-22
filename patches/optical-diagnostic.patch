@@ -1,0 +1,156 @@
+--- a/include/libsurvive/survive.h
++++ b/include/libsurvive/survive.h
+@@ -130,6 +130,20 @@
+  */
+ SURVIVE_IMPORT extern survive_timecode SurviveSensorActivations_default_tolerance;
+ 
++typedef struct SurviveOpticalDiagnostic {
++	bool connected;
++	uint64_t sequence;
++	survive_long_timecode timecode;
++	FLT rms_rad, max_age_seconds, window_seconds;
++	uint32_t residual_count, axis_count[NUM_GEN2_LIGHTHOUSES * 2];
++	int solver_status;
++	bool fitting_lighthouses;
++	uint32_t fits, failed_fits, invalid_fits;
++	uint32_t dropped_measurements, dropped_lighthouses;
++	FLT peak_rms_rad;
++	uint32_t peak_residual_count, peak_lighthouse_count;
++} SurviveOpticalDiagnostic;
++
+ struct SurviveObject {
+ 	SurviveContext *ctx;
+ 
+@@ -239,6 +253,7 @@
+ 	// Plugins / posers / etc can add to this entry list via `survive_object_plugin_data`
+ 	SurvivePluginPair *PluginDataEntries;
+ 	size_t PluginDataEntries_cnt, PluginDataEntries_space;
++	SurviveOpticalDiagnostic *optical_diagnostic; // Optional Simple API-owned storage, protected by the context lock.
+ };
+ 
+ // These exports are mostly for language binding against
+--- a/src/poser_mpfit.c
++++ b/src/poser_mpfit.c
+@@ -498,9 +498,52 @@
+ 		sqrtf(mpfitctx->stats.object_up_error / mpfitctx->stats.object_up_error_cnt),
+ 		sqrtf(mpfitctx->stats.params_error / mpfitctx->stats.params_error_cnt));
+ }
++static void record_optical_diagnostic(const survive_optimizer *optimizer, int status,
++									  const struct async_optimizer_user *user, bool solve_attempted) {
++	SurviveObject *so = user->d->opt.so;
++	if (!so->optical_diagnostic) return;
++	SurviveOpticalDiagnostic next = *so->optical_diagnostic;
++	next.sequence++;
++	next.timecode = user->pdl.hdr.timecode;
++	next.solver_status = status;
++	next.fitting_lighthouses = user->canPossiblySolveLHS;
++	next.residual_count = optimizer->stats.sensor_error_cnt > 0 ? optimizer->stats.sensor_error_cnt : 0;
++	next.rms_rad = next.residual_count && isfinite(optimizer->stats.sensor_error) &&
++		optimizer->stats.sensor_error >= 0 ? sqrt(optimizer->stats.sensor_error / next.residual_count) : NAN;
++	next.window_seconds = so->timebase_hz > 0 ? user->stats.time_window / (FLT)so->timebase_hz : NAN;
++	// Scene construction advances this time past the triggering SYNC when newer observations exist.
++	const FLT reference_time = so->timebase_hz > 0 ? next.timecode / (FLT)so->timebase_hz : NAN;
++	next.max_age_seconds = isfinite(reference_time) ? 0 : NAN;
++	memset(next.axis_count, 0, sizeof(next.axis_count));
++	for (size_t i = 0; i < optimizer->measurementsCnt; ++i) {
++		const survive_optimizer_measurement *measurement = optimizer->measurements + i;
++		if (measurement->meas_type != survive_optimizer_measurement_type_light || measurement->invalid)
++			continue;
++		if (measurement->light.lh < NUM_GEN2_LIGHTHOUSES && measurement->light.axis < 2)
++			next.axis_count[2 * measurement->light.lh + measurement->light.axis]++;
++		FLT age = reference_time - measurement->time;
++		if (!isfinite(age) || age < 0) next.max_age_seconds = NAN;
++		else if (age > next.max_age_seconds) next.max_age_seconds = age;
++	}
++	next.fits++;
++	next.dropped_measurements += optimizer->stats.dropped_meas_cnt;
++	next.dropped_lighthouses += optimizer->stats.dropped_lh_cnt;
++	next.failed_fits += solve_attempted && status <= 0;
++	next.invalid_fits += solve_attempted && !isfinite(next.rms_rad);
++	if (isfinite(next.rms_rad) && (next.peak_residual_count == 0 || next.rms_rad > next.peak_rms_rad)) {
++		next.peak_rms_rad = next.rms_rad;
++		next.peak_residual_count = next.residual_count;
++		next.peak_lighthouse_count = 0;
++		for (int lh = 0; lh < NUM_GEN2_LIGHTHOUSES; ++lh)
++			next.peak_lighthouse_count += next.axis_count[2 * lh] > 0 && next.axis_count[2 * lh + 1] > 0;
++	}
++	*so->optical_diagnostic = next;
++}
++
+ static FLT handle_optimizer_results(survive_optimizer *mpfitctx, int res, const mp_result *result,
+ 									struct async_optimizer_user *user_data, CnMat *R, SurvivePose *out) {
+ 	FLT rtn = -1;
++	record_optical_diagnostic(mpfitctx, res, user_data, true);
+ 
+ 	size_t meas_size = mpfitctx->measurementsCnt;
+ 	SurvivePose *soLocation = survive_optimizer_get_pose(mpfitctx);
+@@ -719,6 +762,7 @@
+ 
+ 	int setup_results = setup_optimizer(&user_data, &mpfitctx, scene);
+ 	if (setup_results < 0) {
++		record_optical_diagnostic(&mpfitctx, setup_results, &user_data, false);
+ 		return setup_results;
+ 	}
+ 
+--- a/src/survive.c
++++ b/src/survive.c
+@@ -812,6 +812,8 @@
+ #include "survive_kalman_tracker.h"
+ 
+ void survive_default_disconnect_process(struct SurviveObject *so) {
++	if (so->optical_diagnostic)
++		*so->optical_diagnostic = (SurviveOpticalDiagnostic){0};
+ 	SurviveContext *ctx = so->ctx;
+ 	survive_recording_disconnect_process(so);
+ 	SV_VERBOSE(10, "Disconnecting device %s at %.7f", survive_colorize(so->codename), survive_run_time(ctx));
+--- a/src/survive_api.c
++++ b/src/survive_api.c
+@@ -31,6 +31,7 @@
+ 		struct SurviveExternalObject seo;
+ 	} data;
+ 
++	SurviveOpticalDiagnostic optical_diagnostic;
+ 	char name[32];
+ 	bool has_update;
+ 
+@@ -265,6 +266,8 @@
+ 
+ 	SurviveSimpleObject *obj = SV_CALLOC(sizeof(struct SurviveSimpleObject));
+ 	obj->data.so = so;
++	obj->optical_diagnostic.connected = true;
++	so->optical_diagnostic = &obj->optical_diagnostic;
+ 	obj->type = to_simple_type(so->object_type);
+ 	obj->actx = actx;
+ 	obj->data.so->user_ptr = (void *)obj;
+@@ -673,3 +676,16 @@
+ 		return 0;
+ 	return survive_run_time(actx->ctx);
+ }
++
++SURVIVE_EXPORT bool survive_simple_get_optical_diagnostic(const SurviveSimpleObject *object,
++														SurviveOpticalDiagnostic *sample) {
++	survive_get_ctx_lock(object->actx->ctx);
++	SurviveOpticalDiagnostic *pending = &((SurviveSimpleObject *)object)->optical_diagnostic;
++	*sample = *pending;
++	pending->fits = pending->failed_fits = pending->invalid_fits = 0;
++	pending->dropped_measurements = pending->dropped_lighthouses = 0;
++	pending->peak_rms_rad = 0;
++	pending->peak_residual_count = pending->peak_lighthouse_count = 0;
++	survive_release_ctx_lock(object->actx->ctx);
++	return sample->connected;
++}
+--- a/include/libsurvive/survive_api.h
++++ b/include/libsurvive/survive_api.h
+@@ -21,8 +21,12 @@
+ 
+ typedef SurviveObjectSubtype SurviveSimpleSubobject_type;
+ 
++struct SurviveOpticalDiagnostic;
+ struct SurviveSimpleObject;
+ typedef struct SurviveSimpleObject SurviveSimpleObject;
++// Copies the latest fit and drains interval counters; disconnected objects return false.
++SURVIVE_EXPORT bool survive_simple_get_optical_diagnostic(const SurviveSimpleObject *object,
++                                                        struct SurviveOpticalDiagnostic *sample);
+ typedef void (*SurviveSimpleLogFn)(struct SurviveSimpleContext *ctx, SurviveLogLevel logLevel, const char *msg);
+ 
+ enum SurviveSimpleEventType {
