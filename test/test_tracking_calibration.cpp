@@ -56,12 +56,11 @@ int main()
   assert(transient.valid());
   assert(!transient.update({}, start + 9s));
   assert(!transient.update({}, start + 14s));
-  assert(!transient.valid());
-  assert(!transient.update(stations, start + 15s));
-  assert(!transient.update(stations, start + 30s));
-  transient = TrackingCalibration{};
-  assert(!transient.update(stations, start + 31s));
-  assert(transient.update(stations, start + 33s));
+  assert(transient.valid());
+  assert(!transient.update(missing, start + 1h));
+  assert(transient.valid());
+  assert(transient.update(stations, start + 1h + 1s));
+  assert(transient.valid());
 
   for (int change = 0; change != 3; ++change) {
     auto calibration = ready_calibration();
@@ -75,9 +74,12 @@ int main()
     } else {
       changed.at(0x5678).setRotation(tf2::Quaternion(tf2::Vector3(1, 0, 0), 0.018));
     }
-    assert(!calibration.update(changed, start + 3s));
+    assert(!calibration.update({}, start + 3s));
+    assert(!calibration.update({}, start + 1h));
+    assert(calibration.valid());
+    assert(!calibration.update(changed, start + 1h + 1s));
     assert(!calibration.valid());
-    assert(!calibration.update(stations, start + 6s));
+    assert(!calibration.update(stations, start + 1h + 4s));
   }
 
   auto explicitly_invalidated = ready_calibration();

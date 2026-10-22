@@ -22,7 +22,6 @@
 
 #include <chrono>
 #include <map>
-#include <optional>
 
 #include "tf2/LinearMath/Transform.h"
 
@@ -58,14 +57,8 @@ public:
         invalidate();
         return false;
       }
-      if (!missing_since_ && stations.size() != baseline_.size()) {missing_since_ = now;}
-      if (missing_since_ && now - *missing_since_ >= std::chrono::seconds(5)) {
-        invalidate();
-        return false;
-      }
-      if (stations.size() != baseline_.size()) {return false;}
-      missing_since_.reset();
-      return true;
+      // Visibility gates output, but elapsed occlusion is not evidence of a changed layout.
+      return stations.size() == baseline_.size();
     }
     const bool unchanged = poses_match && !stations.empty() && stations.size() == baseline_.size();
     if (!unchanged) {
@@ -80,6 +73,5 @@ private:
   bool frozen_{false};
   Stations baseline_;
   Clock::time_point stable_since_{};
-  std::optional<Clock::time_point> missing_since_;
 };
 }  // namespace libsurvive_ros2
