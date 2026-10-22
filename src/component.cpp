@@ -463,8 +463,12 @@ void Component::log_optical_diagnostics()
     survive_simple_unlock(actx_);
     SurviveOpticalDiagnostic sample{};
     if (!survive_simple_get_optical_diagnostic(it, &sample)) {continue;}
-    const std::string serial(name.data());
-    const auto observation = optical_monitors_[serial].observe(
+    auto * object = survive_simple_get_survive_object(it);
+    if (!object) {continue;}
+    survive_get_ctx_lock(object->ctx);
+    const std::string serial(object->serial_number);
+    survive_release_ctx_lock(object->ctx);
+    const auto observation = optical_monitors_[it].observe(
       sample, now, calibration_.valid() && tracking_started_);
     summary.add(observation);
     std::ostringstream axes;
@@ -475,13 +479,14 @@ void Component::log_optical_diagnostics()
       }
     }
     RCLCPP_INFO(get_logger(),
-      "Optical diagnostic only device=%s state=%s sequence=%" PRIu64 " device_ticks=%" PRIu64 " "
+      "Optical diagnostic only device=%s serial=%s state=%s sequence=%" PRIu64 " "
+      "device_ticks=%" PRIu64 " "
       "rms_rad=%.6g residuals=%u peak_rms_rad=%.6g peak_residuals=%u peak_lighthouses=%u "
       "fits=%u failed=%u invalid=%u dropped_measurements=%u dropped_lighthouses=%u "
       "solver_status=%d fitting_lighthouses=%d "
       "max_measurement_age_ms=%.3f window_ms=%.3f axes=%s "
       "trend=%s baseline_rms_rad=%.6g rise_ratio=%.3f rise_seconds=%.3f trend_eligible=%d",
-      serial.c_str(), observation.state, static_cast<std::uint64_t>(sample.sequence),
+      name.data(), serial.c_str(), observation.state, static_cast<std::uint64_t>(sample.sequence),
       static_cast<std::uint64_t>(sample.timecode),
       sample.sequence ? static_cast<double>(sample.rms_rad) :
       std::numeric_limits<double>::quiet_NaN(),
@@ -523,7 +528,7 @@ void Component::work()
       continue;  // The current event belongs to the closed native context.
     }
     const bool ready = tracking_ready();
-    if (!calibration_.valid()) {optical_monitors_.clear();}
+    if (calibration_valid_ && !calibration_.valid()) {optical_monitors_.clear();}
     if (ready && !tracking_started_) {
       if (!survive_freeze_calibration(survive_simple_get_ctx(actx_))) {
         calibration_.invalidate();
@@ -645,7 +650,7 @@ void Component::work()
       case SurviveSimpleEventType_DeviceAdded: {
           const struct SurviveSimpleObjectEvent * object_event = survive_simple_get_object_event(
             &event);
-          optical_monitors_.erase(survive_simple_object_name(object_event->object));
+          optical_monitors_.erase(object_event->object);
           RCLCPP_INFO(
             this->get_logger(), "A new device %s was added at time %lf",
             survive_simple_serial_number(object_event->object),

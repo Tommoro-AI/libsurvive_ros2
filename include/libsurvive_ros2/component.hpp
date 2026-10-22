@@ -77,7 +77,7 @@ private:
   void work();
   void log_optical_diagnostics();
   OpticalDiagnosticMonitor::Clock::time_point last_optical_log_{};
-  std::unordered_map<std::string, OpticalDiagnosticMonitor> optical_monitors_;
+  std::unordered_map<const SurviveSimpleObject *, OpticalDiagnosticMonitor> optical_monitors_;
   bool tracking_ready();
   bool start_driver(bool recalibrate = false);
   void set_ready(bool ready);

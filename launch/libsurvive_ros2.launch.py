@@ -56,7 +56,7 @@ def start_driver(context):
         executable='libsurvive_ros2_node',
         name='libsurvive_ros2_node',
         namespace=LaunchConfiguration('namespace'),
-        output='screen',
+        output='both',
         parameters=[{
             'driver_args': driver_args,
             'tracking_frame': LaunchConfiguration('tracking_frame'),

@@ -1,0 +1,14 @@
+--- a/src/driver_vive.c
++++ b/src/driver_vive.c
+@@ -980,10 +980,10 @@
+ 	if (print) {
+ 		size_t total_packets = 0;
+ 		for (int i = 0; i < sv->udev_cnt; i++) {
+-			const char *codename = sv->udev[i]->so->codename;
+ 			if (sv->udev[i]->so == 0)
+ 				continue;
+ 
++			const char *codename = sv->udev[i]->so->codename;
+ 			for (int j = 0; j < sv->udev[i]->interface_cnt; j++) {
+ 				SurviveUSBInterface *iface = &sv->udev[i]->interfaces[j];
+ 				if (iface->assoc_obj)

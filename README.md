@@ -133,6 +133,14 @@ Velocity and battery behavior:
 
 ### Optical consistency logging
 
+Native SDK messages, including decoder warnings, are saved in the launch
+session's `launch.log` as well as shown on screen. USB statistics are disabled
+by default. For a transport investigation, append `--usb-hz-output 1` to the
+node's `driver_args` parameter. Match `Iface` names with the optical diagnostic's
+`device` field and use `serial` to identify the physical tracker. Packet counts
+measure USB reports. `Max CB Latency` measures submission-to-callback time,
+including host event handling, and does not isolate radio latency.
+
 The driver emits `Optical diagnostic only` once per device per second. This is
 observation only. It does not change tracking poses, TF publication, readiness,
 calibration, timeout handling, or robot safety checks.
@@ -144,14 +152,17 @@ promise that the final published pose has this error. `residuals`, `axes` (SDK
 station index followed by horizontal/vertical counts), `solver_status`, device
 `device_ticks`, measurement age, and the SDK's adaptive measurement window
 provide context. `device` is the immutable SDK object name (for example `WM0`),
-not its configuration-updated hardware serial. Device ticks are not wall-clock timestamps.
+and `serial` is the configuration-updated hardware serial. Device ticks are not
+wall-clock timestamps.
 
 `peak_rms_rad`, its residual/station support, and fit/failure/invalid counters
 cover the interval since the previous log. A brief high residual remains visible
 even if the latest fit has recovered. The other fields describe the latest fit,
 so their coverage can differ from the interval peak. Logging drains diagnostic
 counters under the SDK lock and formats/writes the message after releasing it.
-No additional residual evaluation or logging runs in the optimizer.
+No additional residual evaluation or logging runs in the optimizer. The `fits`
+counter includes rejected solver setup attempts, so it does not by itself prove
+that an optimizer solve ran.
 
 The provisional labels have no control effect:
 

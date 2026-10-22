@@ -50,7 +50,7 @@ fetchcontent_makeavailable(libsurvive_src)
 find_package(Git REQUIRED)
 foreach(patch_name
     lighthouse-covariance plugin-deduplication calibration-freeze event-delivery
-    optical-diagnostic ootx-multi-tracker)
+    optical-diagnostic ootx-multi-tracker usb-diagnostic)
   set(upstream_patch "${CMAKE_CURRENT_SOURCE_DIR}/patches/${patch_name}.patch")
   execute_process(
     COMMAND ${GIT_EXECUTABLE} apply --reverse --check ${upstream_patch}
