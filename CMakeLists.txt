@@ -48,7 +48,9 @@ fetchcontent_makeavailable(libsurvive_src)
 
 # Keep upstream fixes across clean builds and reconfigure.
 find_package(Git REQUIRED)
-foreach(patch_name lighthouse-covariance plugin-deduplication calibration-freeze event-delivery optical-diagnostic)
+foreach(patch_name
+    lighthouse-covariance plugin-deduplication calibration-freeze event-delivery
+    optical-diagnostic ootx-multi-tracker)
   set(upstream_patch "${CMAKE_CURRENT_SOURCE_DIR}/patches/${patch_name}.patch")
   execute_process(
     COMMAND ${GIT_EXECUTABLE} apply --reverse --check ${upstream_patch}
@@ -153,7 +155,7 @@ if(BUILD_TESTING)
   ament_target_dependencies(test_tracking_calibration tf2)
   add_test(NAME test_tracking_calibration COMMAND test_tracking_calibration)
 
-  foreach(test_name calibration_freeze calibration_freeze_mpfit event_delivery optical_diagnostic_native)
+  foreach(test_name calibration_freeze calibration_freeze_mpfit event_delivery optical_diagnostic_native ootx_multi_tracker)
     add_executable(test_${test_name} test/test_${test_name}.c)
     target_include_directories(test_${test_name} PRIVATE
       ${libsurvive_src_SOURCE_DIR} ${libsurvive_src_SOURCE_DIR}/src

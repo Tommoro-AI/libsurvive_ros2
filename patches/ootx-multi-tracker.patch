@@ -1,0 +1,177 @@
+--- a/src/survive_process_gen2.c
++++ b/src/survive_process_gen2.c
+@@ -125,12 +125,22 @@
+ 		SURVIVE_INVOKE_HOOK(ootx_received, ctx, id);
+ 	}
+ }
+-void survive_ootx_dump_decoder_context(struct SurviveContext *ctx, int bsd_idx) {
+-	ootx_decoder_context *decoderContext = ctx->bsd[bsd_idx].ootx_data;
+-	if (decoderContext == 0)
+-		return;
+-
+-	SV_VERBOSE(105, "OOTX stats for LH%d (mode: %d, %u)", bsd_idx, ctx->bsd[bsd_idx].mode, ctx->bsd[bsd_idx].BaseStationID);
++typedef struct SurviveOOTXDecoder {
++	ootx_decoder_context decoder;
++	struct SurviveOOTXDecoder *next;
++} SurviveOOTXDecoder;
++
++ootx_decoder_context *survive_ootx_decoder_for_object(SurviveObject *so, int bsd_idx) {
++	for (SurviveOOTXDecoder *node = so->ctx->bsd[bsd_idx].ootx_data; node; node = node->next) {
++		if (node->decoder.user == so)
++			return &node->decoder;
++	}
++	return 0;
++}
++
++static void dump_decoder_context(struct SurviveContext *ctx, int bsd_idx, ootx_decoder_context *decoderContext) {
++
++	SV_VERBOSE(105, "OOTX stats for LH%d (mode: %d, %u), device %s", bsd_idx, ctx->bsd[bsd_idx].mode, ctx->bsd[bsd_idx].BaseStationID, ((SurviveObject *)decoderContext->user)->codename);
+ 	SV_VERBOSE(105, "\tBits seen:         %u (%d bytes)", decoderContext->stats.bits_seen,
+ 			   decoderContext->stats.bits_seen / 8);
+ 	SV_VERBOSE(105, "\tBad CRCs:          %u", decoderContext->stats.bad_crcs);
+@@ -144,29 +154,53 @@
+ 	SV_VERBOSE(105, "\tTime:              %2.2f (%2.2fb/s, %2.2fb/s)", d, decoderContext->stats.bits_seen / d,
+ 			   decoderContext->stats.used_bytes * 8 / d);
+ }
++void survive_ootx_dump_decoder_context(struct SurviveContext *ctx, int bsd_idx) {
++	for (SurviveOOTXDecoder *node = ctx->bsd[bsd_idx].ootx_data; node; node = node->next)
++		dump_decoder_context(ctx, bsd_idx, &node->decoder);
++}
++
+ void survive_ootx_free_decoder_context(struct SurviveContext *ctx, int bsd_idx) {
+-	ootx_decoder_context *decoderContext = ctx->bsd[bsd_idx].ootx_data;
++	survive_ootx_dump_decoder_context(ctx, bsd_idx);
++	SurviveOOTXDecoder *node = ctx->bsd[bsd_idx].ootx_data;
+ 	ctx->bsd[bsd_idx].ootx_data = 0;
+-	if (decoderContext == 0)
+-		return;
+-
+-	survive_ootx_dump_decoder_context(ctx, bsd_idx);
+-	ootx_free_decoder_context(decoderContext);
+-	free(decoderContext);
+-}
++	while (node) {
++		SurviveOOTXDecoder *next = node->next;
++		ootx_free_decoder_context(&node->decoder);
++		free(node);
++		node = next;
++	}
++}
++
++void survive_ootx_free_object(SurviveObject *so) {
++	for (int lh = 0; lh < NUM_GEN2_LIGHTHOUSES; lh++) {
++		SurviveOOTXDecoder *head = so->ctx->bsd[lh].ootx_data;
++		SurviveOOTXDecoder **link = &head;
++		while (*link) {
++			SurviveOOTXDecoder *node = *link;
++			if (node->decoder.user == so) {
++				dump_decoder_context(so->ctx, lh, &node->decoder);
++				*link = node->next;
++				ootx_free_decoder_context(&node->decoder);
++				free(node);
++			} else {
++				link = &node->next;
++			}
++		}
++		so->ctx->bsd[lh].ootx_data = head;
++	}
++}
++
+ void survive_ootx_behavior(SurviveObject *so, int8_t bsd_idx, int8_t lh_version, int ootx) {
+ 	struct SurviveContext *ctx = so->ctx;
+ 	if (ctx->bsd[bsd_idx].OOTXChecked == false) {
+-		ootx_decoder_context *decoderContext = ctx->bsd[bsd_idx].ootx_data;
+-
++		ootx_decoder_context *decoderContext = survive_ootx_decoder_for_object(so, bsd_idx);
+ 		if (decoderContext == 0) {
+-			if (lh_version == 1) {
+-				SV_INFO("OOTX not set for LH in channel %d; attaching ootx decoder using device %s",
+-						ctx->bsd[bsd_idx].mode, so->codename);
+-			} else {
+-				SV_INFO("OOTX not set for LH %d; attaching ootx decoder using device %s", bsd_idx, so->codename);
+-			}
+-			decoderContext = ctx->bsd[bsd_idx].ootx_data = SV_CALLOC(sizeof(ootx_decoder_context));
++			SV_INFO("Attaching OOTX decoder for LH%d (mode: %d), device %s", bsd_idx,
++					ctx->bsd[bsd_idx].mode, so->codename);
++			SurviveOOTXDecoder *node = SV_CALLOC(sizeof(SurviveOOTXDecoder));
++			node->next = ctx->bsd[bsd_idx].ootx_data;
++			ctx->bsd[bsd_idx].ootx_data = node;
++			decoderContext = &node->decoder;
+ 			ootx_init_decoder_context(decoderContext, survive_run_time(ctx));
+ 			decoderContext->user1 = bsd_idx;
+ 			decoderContext->user = so;
+@@ -175,14 +209,10 @@
+ 			decoderContext->ootx_error_clbk = ootx_error_clbk_d;
+ 			decoderContext->ootx_bad_crc_clbk = ootx_bad_crc_clbk;
+ 		}
+-		if (decoderContext->user == so) {
+-			ootx_pump_bit(decoderContext, ootx);
+-
+-			if (ctx->bsd[bsd_idx].OOTXChecked) {
+-				ctx->bsd[bsd_idx].OOTXChecked = false;
+-				survive_ootx_dump_decoder_context(ctx, bsd_idx);
+-				// survive_ootx_free_decoder_context(ctx, bsd_idx);
+-			}
++		ootx_pump_bit(decoderContext, ootx);
++		if (ctx->bsd[bsd_idx].OOTXChecked) {
++			ctx->bsd[bsd_idx].OOTXChecked = false;
++			dump_decoder_context(ctx, bsd_idx, decoderContext);
+ 		}
+ 	}
+ }
+--- a/src/survive_internal.h
++++ b/src/survive_internal.h
+@@ -9,6 +9,10 @@
+ #include <stdint.h>
+ #include <survive.h>
+ 
++
++struct ootx_decoder_context;
++struct ootx_decoder_context *survive_ootx_decoder_for_object(SurviveObject *so, int bsd_idx);
++void survive_ootx_free_object(SurviveObject *so);
+ 
+ //Driver registration
+ #define MAX_DRIVERS 32
+--- a/src/survive_process_gen1.c
++++ b/src/survive_process_gen1.c
+@@ -1,6 +1,7 @@
+ #include "survive.h"
+ 
+ #include "ootx_decoder.h"
++#include "survive_internal.h"
+ #include "survive_kalman_tracker.h"
+ #include "survive_recording.h"
+ 
+@@ -52,7 +53,7 @@
+ 		if (sensor_id == -3)
+ 			SurviveSensorActivations_add_sync(&so->activations, &l.common);
+ 
+-		ootx_decoder_context *decoderContext = ctx->bsd[lh].ootx_data;
++		ootx_decoder_context *decoderContext = survive_ootx_decoder_for_object(so, lh);
+ 		uint32_t ootxOffset = decoderContext ? decoderContext->offset : 0;
+ 		uint32_t ootxTotalOffset = decoderContext ? decoderContext->total_offset : 0;
+ 		SV_VERBOSE(600, "%s Sync    %8x %3d.%2d.%d %8u %u %d %d / %d", survive_colorize_codename(so),
+--- a/src/survive_default_devices.c
++++ b/src/survive_default_devices.c
+@@ -697,6 +697,7 @@
+ 		}
+ 	}
+ 
++	survive_ootx_free_object(so);
+ 	survive_kalman_tracker_free(so->tracker);
+ 	SurviveSensorActivations_dtor(so);
+ 	free(so->tracker);
+--- a/src/survive.c
++++ b/src/survive.c
+@@ -1081,11 +1081,6 @@
+ 	destroy_config_group(ctx->temporary_config_values);
+ 
+ 	for (int lh = 0; lh < NUM_GEN2_LIGHTHOUSES; lh++) {
+-		ootx_decoder_context *decoderContext = ctx->bsd[lh].ootx_data;
+-		if (decoderContext) {
+-			ootx_free_decoder_context(decoderContext);
+-			free(decoderContext);
+-		}
+ 		destroy_config_group(ctx->lh_config + lh);
+ 	}
+ 
