@@ -1,0 +1,31 @@
+name: 일반 업무·논의
+description: 상위 과제, 조사, 설계 또는 의사결정을 정리합니다.
+body:
+  - type: textarea
+    id: background
+    attributes:
+      label: 배경
+      description: 이 업무나 논의가 필요한 이유와 현재 상황을 적어주세요.
+    validations:
+      required: true
+  - type: textarea
+    id: objective
+    attributes:
+      label: 목표·논의할 내용
+      description: 이루려는 결과나 결정할 내용을 적어주세요. 세부 작업은 정해진 뒤 하위 이슈로 나눌 수 있습니다.
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: 참고 자료
+      description: 관련 문서·조사 결과 등 필요한 자료를 첨부해주세요.
+      placeholder: |
+        <details>
+        <summary>상세 자료</summary>
+
+        자료를 여기에 넣어주세요.
+
+        </details>
+    validations:
+      required: false

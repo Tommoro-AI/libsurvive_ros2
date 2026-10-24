@@ -1,0 +1,105 @@
+name: 버그 제보
+description: ROS 2 오류나 예상과 다른 동작을 제보합니다.
+labels: [bug]
+body:
+  - type: input
+    id: generative_ai
+    attributes:
+      label: AI assistance
+      description: 이슈 발견·분석·작성에 AI를 사용했다면 도구·모델과 사용 범위를 적어주세요. 사용하지 않았다면 '미사용', 모델을 모르면 '모름'으로 적어주세요.
+      placeholder: "미사용 / 사용한 도구·모델 및 사용 범위"
+    validations:
+      required: true
+  - type: textarea
+    id: os
+    attributes:
+      label: Operating system
+      description: OS 이름과 버전을 적어주세요. Linux는 `uname -a`, Windows는 `ver` 실행 결과를 붙여 넣어도 됩니다.
+      placeholder: "예: Ubuntu 24.04, Windows 11"
+    validations:
+      required: true
+  - type: input
+    id: ros_distribution
+    attributes:
+      label: ROS 2 distribution
+      description: 문제를 확인한 환경의 ROS 2 배포판을 적어주세요. `printenv ROS_DISTRO`로 확인할 수 있습니다.
+      placeholder: "예: Humble, Jazzy, Rolling"
+    validations:
+      required: true
+  - type: input
+    id: package_version
+    attributes:
+      label: 대상 패키지 버전·커밋
+      description: 문제를 확인한 패키지 이름과 버전을 적어주세요. 소스 빌드라면 해당 저장소의 `git rev-parse HEAD` 결과를, 배포본이라면 릴리스 태그나 이미지 태그를 적어주세요. 확인하지 못했다면 '미확인'으로 적어주세요.
+      placeholder: "패키지 이름 / 버전·릴리스 태그 / 소스 커밋 해시"
+    validations:
+      required: true
+  - type: input
+    id: rmw
+    attributes:
+      label: RMW implementation (if applicable)
+      description: ROS 2 통신에 사용하는 RMW 패키지 이름을 적어주세요. `ros2 doctor --report`의 `middleware name`에서 확인할 수 있습니다.
+      placeholder: "예: rmw_cyclonedds_cpp, rmw_fastrtps_cpp"
+    validations:
+      required: false
+  - type: textarea
+    id: rmw_configuration
+    attributes:
+      label: RMW configuration (if applicable)
+      description: 기본값과 다르게 적용한 DDS 설정 파일이나 환경변수가 있다면 첨부해주세요. 별도 설정이 없다면 비워두세요.
+    validations:
+      required: false
+  - type: input
+    id: clientlib
+    attributes:
+      label: ROS 2 client library (if applicable)
+      description: 문제가 발생한 노드에서 사용하는 ROS 2 API 라이브러리를 적어주세요. C++은 rclcpp, Python은 rclpy 등이 해당합니다.
+      placeholder: "예: rclcpp, rclpy"
+    validations:
+      required: false
+  - type: textarea
+    id: doctor
+    attributes:
+      label: ros2 doctor --report output
+      description: 문제를 확인한 실행 환경에서 `ros2 doctor --report`를 실행해 결과를 첨부해주세요. 긴 출력은 아래 접기 형식을 사용할 수 있습니다.
+      placeholder: |
+        <details>
+        <summary>ros2 doctor --report</summary>
+
+        ```console
+        실행 결과
+        ```
+
+        </details>
+    validations:
+      required: false
+  - type: textarea
+    id: repro
+    attributes:
+      label: 재현 방법
+      description: 실행한 명령과 순서를 적어주세요. 직접 재현하지 않았다면 관찰한 상황이나 코드 근거를 적어주세요.
+      placeholder: |
+        1.
+        2.
+        3.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: 기대한 동작
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: 실제 동작
+    validations:
+      required: true
+  - type: textarea
+    id: addinfo
+    attributes:
+      label: 추가 정보
+      description: 관련 로그·영상, 저장소 버전·커밋, 장비·SDK·펌웨어, 마지막으로 정상 동작한 버전 등 필요한 정보를 첨부해주세요.
+    validations:
+      required: false

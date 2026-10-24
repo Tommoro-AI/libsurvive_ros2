@@ -1,0 +1,39 @@
+name: 기능·개선 제안
+description: 기능 추가나 기존 동작의 개선을 제안합니다.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: background
+    attributes:
+      label: 배경
+      description: 현재의 불편함, 해결할 문제 또는 확인이 필요한 사항을 적어주세요.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: 제안 내용
+      description: 원하는 동작과 기대하는 결과를 적어주세요. 구현 방식이 정해지지 않아도 괜찮습니다.
+    validations:
+      required: true
+  - type: textarea
+    id: implementation
+    attributes:
+      label: 구현 고려사항
+      description: 이미 검토한 접근 방법, 대안, 호환성 또는 범위 제한이 있다면 적어주세요.
+    validations:
+      required: false
+  - type: textarea
+    id: context
+    attributes:
+      label: 참고 자료
+      description: 관련 코드·문서·예시를 첨부하세요. 긴 자료는 아래 접기 형식을 사용할 수 있습니다.
+      placeholder: |
+        <details>
+        <summary>상세 자료</summary>
+
+        자료를 여기에 넣어주세요.
+
+        </details>
+    validations:
+      required: false
